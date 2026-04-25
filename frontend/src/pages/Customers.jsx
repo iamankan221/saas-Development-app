@@ -71,7 +71,10 @@ export default function Customers() {
 
   const { data: customers = [], isLoading } = useQuery({
     queryKey: ["customers", search],
-    queryFn: () => apiClient.getCustomers(search ? { search } : {}),
+    queryFn: async () => {
+      const response = await apiClient.getCustomers(search ? { search } : {});
+      return response.data || response.customers || response || [];
+    }
   });
 
   const createMutation = useMutation({

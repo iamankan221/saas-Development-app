@@ -53,7 +53,10 @@ export default function Suppliers() {
 
   const { data: suppliers = [], isLoading } = useQuery({
     queryKey: ["suppliers", search],
-    queryFn: () => apiClient.getSuppliers(search ? { search } : {}),
+    queryFn: async() => {
+      const response = await apiClient.getSuppliers(search ? { search } : {});
+      return response.data || response.suppliers || response || [];
+    }
   });
 
   const createMutation = useMutation({

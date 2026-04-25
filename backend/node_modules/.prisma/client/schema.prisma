@@ -1,0 +1,213 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Customer {
+  id           Int           @id @default(autoincrement())
+  name         String        @db.VarChar(255)
+  phone        String        @unique @db.VarChar(20)
+  email        String?       @unique @db.VarChar(255)
+  address      String?
+  gstNumber    String?       @unique @db.VarChar(50)
+  panNumber    String?       @unique @db.VarChar(20)
+  creditLimit  Int?
+  totalBilled  BigInt        @default(0)
+  totalPaid    BigInt        @default(0)
+  status       String        @default("active")
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  bills        Bill[]
+  transactions Transaction[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("customers")
+}
+
+model Supplier {
+  id             Int             @id @default(autoincrement())
+  name           String          @db.VarChar(255)
+  contactPerson  String          @db.VarChar(255)
+  phone          String          @db.VarChar(20)
+  email          String?         @db.VarChar(255)
+  address        String
+  gstNumber      String?         @unique @db.VarChar(50)
+  panNumber      String?         @unique @db.VarChar(20)
+  paymentTerms   String          @db.VarChar(100)
+  status         String          @default("active")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  inventoryItems InventoryItem[]
+  purchaseOrders PurchaseOrder[]
+  transactions   Transaction[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("suppliers")
+}
+
+model InventoryItem {
+  id                 Int                 @id @default(autoincrement())
+  name               String              @db.VarChar(255)
+  sku                String              @unique @db.VarChar(100)
+  category           String              @db.VarChar(100)
+  location           String              @db.VarChar(100)
+  unit               String              @db.VarChar(20)
+  purchasePrice      BigInt
+  sellingPrice       BigInt
+  currentQuantity    Int
+  totalQuantity      Int
+  lowStockThreshold  Int
+  taxRate            Int
+  hsnCode            String              @db.VarChar(20)
+  expiryDate         DateTime?
+  supplierId         Int
+  status             String              @default("active")
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  billItems          BillItem[]
+  supplier           Supplier            @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  purchaseOrderItems PurchaseOrderItem[]
+  stockMovements     StockMovement[]
+
+  @@index([sku])
+  @@index([category])
+  @@index([supplierId])
+  @@index([status])
+  @@index([expiryDate])
+  @@map("inventory_items")
+}
+
+model Bill {
+  id             Int           @id @default(autoincrement())
+  billNumber     String        @unique @db.VarChar(50)
+  customerId     Int
+  customerName   String        @db.VarChar(255)
+  subtotal       BigInt
+  discountAmount BigInt        @default(0)
+  taxAmount      BigInt
+  totalAmount    BigInt
+  status         String        @default("unpaid")
+  notes          String?
+  dueDate        DateTime?
+  paidDate       DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  items          BillItem[]
+  customer       Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  transactions   Transaction[]
+
+  @@index([billNumber])
+  @@index([customerId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("bills")
+}
+
+model BillItem {
+  id              Int           @id @default(autoincrement())
+  billId          Int
+  inventoryItemId Int
+  itemName        String        @db.VarChar(255)
+  quantity        Int
+  unitPrice       BigInt
+  discount        Int
+  taxRate         Int
+  subtotal        BigInt
+  createdAt       DateTime      @default(now())
+  bill            Bill          @relation(fields: [billId], references: [id], onDelete: Cascade)
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+
+  @@index([billId])
+  @@index([inventoryItemId])
+  @@map("bill_items")
+}
+
+model PurchaseOrder {
+  id             Int                 @id @default(autoincrement())
+  poNumber       String              @unique @db.VarChar(50)
+  supplierId     Int
+  supplierName   String              @db.VarChar(255)
+  subtotal       BigInt
+  discountAmount BigInt              @default(0)
+  taxAmount      BigInt
+  totalAmount    BigInt
+  status         String              @default("pending")
+  notes          String?
+  expectedDate   DateTime?
+  receivedDate   DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  items          PurchaseOrderItem[]
+  supplier       Supplier            @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([poNumber])
+  @@index([supplierId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id               Int           @id @default(autoincrement())
+  purchaseOrderId  Int
+  inventoryItemId  Int
+  itemName         String        @db.VarChar(255)
+  quantity         Int
+  unitPrice        BigInt
+  discount         Int
+  taxRate          Int
+  subtotal         BigInt
+  receivedQuantity Int           @default(0)
+  createdAt        DateTime      @default(now())
+  inventoryItem    InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseOrderId])
+  @@index([inventoryItemId])
+  @@map("purchase_order_items")
+}
+
+model Transaction {
+  id            Int       @id @default(autoincrement())
+  type          String    @db.VarChar(50)
+  relatedType   String    @db.VarChar(50)
+  relatedId     Int
+  amount        BigInt
+  paymentMethod String    @db.VarChar(50)
+  customerId    Int?
+  supplierId    Int?
+  description   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  customer      Customer? @relation(fields: [customerId], references: [id])
+  bill          Bill      @relation(fields: [relatedId], references: [id], onDelete: SetNull)
+  supplier      Supplier? @relation(fields: [supplierId], references: [id])
+
+  @@index([type])
+  @@index([customerId])
+  @@index([supplierId])
+  @@index([createdAt])
+  @@map("transactions")
+}
+
+model StockMovement {
+  id               Int           @id @default(autoincrement())
+  inventoryItemId  Int
+  type             String        @db.VarChar(50)
+  quantity         Int
+  previousQuantity Int
+  newQuantity      Int
+  reason           String?
+  createdAt        DateTime      @default(now())
+  inventoryItem    InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryItemId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("stock_movements")
+}

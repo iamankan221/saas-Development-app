@@ -5,7 +5,11 @@ import { formatDistanceToNow } from "date-fns";
 
 export default function Dashboard() {
   const { data: summary, isLoading: sl } = useQuery({ queryKey: ["dashboard-summary"], queryFn: apiClient.getDashboardSummary });
-  const { data: activity = [], isLoading: al } = useQuery({ queryKey: ["dashboard-activity"], queryFn: apiClient.getDashboardActivity });
+  const { data: activity = [], isLoading: al } = useQuery({ queryKey: ["dashboard-activity"], queryFn: async () => {
+    const response = await apiClient.getDashboardActivity();
+    // Return the actual array, whether it's wrapped in 'data' or 'activity'
+    return response.data || response.activity || response || []; 
+  }});
 
   const cards = [
     { label: "Today's Sales",   value: formatINR(summary?.todaySales),   icon: TrendingUp,     color: "text-blue-600",   bg: "bg-blue-50" },

@@ -80,7 +80,10 @@ export default function Inventory() {
 
   const { data: items = [], isLoading } = useQuery({
     queryKey: ["inventory", search, filterLow, filterExpiring],
-    queryFn: () => apiClient.getInventory({ search: search || undefined, lowStock: filterLow || undefined, expiringSoon: filterExpiring || undefined }),
+    queryFn: async () => {
+      const response = await apiClient.getInventory({ search: search || undefined, lowStock: filterLow || undefined, expiringSoon: filterExpiring || undefined });
+      return response.data || response.inventory || response || [];
+    }
   });
   const { data: summary } = useQuery({ queryKey: ["inventory-summary"], queryFn: apiClient.getInventorySummary });
 
