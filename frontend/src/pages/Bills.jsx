@@ -13,7 +13,10 @@ export default function Bills() {
 
   const { data: bills = [], isLoading } = useQuery({
     queryKey: ["bills", filterStatus],
-    queryFn: () => apiClient.getBills(filterStatus !== "all" ? { status: filterStatus } : {}),
+    queryFn: async() => {
+      const response = await apiClient.getBills(filterStatus !== "all" ? { status: filterStatus } : {});
+      return response.data || response.bills || response || [];
+    },
   });
 
   const updateMutation = useMutation({
