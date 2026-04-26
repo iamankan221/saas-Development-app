@@ -2,14 +2,157 @@ import { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { apiClient, formatINR } from "@/lib/api";
-import { ArrowLeft, Plus, Trash2, UserPlus, RotateCcw, X, Hash, Loader2, Search } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, UserPlus, RotateCcw, X, Hash, Loader2, Search, ChevronDown } from "lucide-react";
 import { toast } from "@/lib/toast";
+
+// ============================================================================
+// SEARCHABLE ITEM SELECT
+// ============================================================================
+
+function SearchableItemSelect({ inventory, value, onChange }) {
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  const selected = inventory.find(i => i.id === +value);
+  const filtered = search.trim()
+    ? inventory.filter(i => i.name.toLowerCase().includes(search.toLowerCase()))
+    : inventory;
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const handleSelect = (item) => {
+    onChange(String(item.id));
+    setSearch("");
+    setOpen(false);
+  };
+
+  const handleClear = (e) => {
+    e.stopPropagation();
+    onChange("");
+    setSearch("");
+  };
+
+  return (
+    <div className="relative" ref={ref}>
+      {selected && !open ? (
+        // Show selected item as a badge
+        <div
+          className="input text-sm flex items-center justify-between gap-1 cursor-pointer"
+          onClick={() => { setOpen(true); setSearch(""); }}
+        >
+          <span className="truncate">{selected.name} ({selected.currentQuantity} {selected.unit})</span>
+          <button
+            type="button"
+            className="shrink-0 p-0.5 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-colors"
+            onClick={handleClear}
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ) : (
+        // Search input
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+          <input
+            className="input text-sm pl-8 pr-7"
+            type="text"
+            placeholder="Search item..."
+            value={search}
+            onChange={e => { setSearch(e.target.value); setOpen(true); }}
+            onFocus={() => setOpen(true)}
+            autoComplete="off"
+          />
+          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+        </div>
+      )}
+
+      {/* Dropdown */}
+      {open && (
+        <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-3 text-center text-sm text-gray-400">No items found</div>
+          ) : (
+            filtered.map(i => (
+              <button
+                key={i.id}
+                type="button"
+                className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm hover:bg-blue-50 transition-colors ${
+                  +value === i.id ? "bg-blue-50 text-blue-700" : "text-gray-700"
+                }`}
+                onClick={() => handleSelect(i)}
+              >
+                <span className="truncate font-medium">{i.name}</span>
+                <span className="shrink-0 ml-2 text-xs text-gray-400">
+                  Stock: {i.currentQuantity} {i.unit}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Helper to generate a 6-character hex bill code
 function generateRandomBillCode() {
   const bytes = new Uint8Array(3);
   window.crypto.getRandomValues(bytes);
   return Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+
+// ============================================================================
+// NUMBER TO WORDS (Indian Rupees)
+// ============================================================================
+
+function numberToWordsINR(num) {
+  if (num === 0) return "Rupees Zero Only";
+  const isNegative = num < 0;
+  num = Math.abs(Math.round(num));
+
+  const ones = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+    "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
+  const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+
+  function twoDigits(n) {
+    if (n < 20) return ones[n];
+    return tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "");
+  }
+
+  function threeDigits(n) {
+    if (n === 0) return "";
+    if (n < 100) return twoDigits(n);
+    return ones[Math.floor(n / 100)] + " Hundred" + (n % 100 ? " " + twoDigits(n % 100) : "");
+  }
+
+  // Indian system: Crore, Lakh, Thousand, Hundred
+  const parts = [];
+  if (num >= 10000000) {
+    parts.push(threeDigits(Math.floor(num / 10000000)) + " Crore");
+    num %= 10000000;
+  }
+  if (num >= 100000) {
+    parts.push(twoDigits(Math.floor(num / 100000)) + " Lakh");
+    num %= 100000;
+  }
+  if (num >= 1000) {
+    parts.push(twoDigits(Math.floor(num / 1000)) + " Thousand");
+    num %= 1000;
+  }
+  if (num > 0) {
+    parts.push(threeDigits(num));
+  }
+
+  const words = parts.join(" ");
+  return (isNegative ? "Minus " : "") + "Rupees " + words + " Only";
 }
 
 // Debounce hook
@@ -317,12 +460,45 @@ export default function NewBill() {
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [showReturn, setShowReturn] = useState(false);
 
+  // Auto-load return bill from URL params (when coming from Bills page)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("mode") === "return" && params.get("billId")) {
+      const billId = params.get("billId");
+      apiClient.getBill(billId).then(bill => {
+        if (bill) {
+          setSelectedCustomer(bill.customer);
+          setIsNewCustomer(false);
+          setBillCode(bill.billCode || "");
+          setStatus(bill.status || "unpaid");
+          if (bill.dueDate) setDueDate(bill.dueDate.split('T')[0]);
+          setNotes(`Return for Bill #${bill.billCode || bill.billNumber}`);
+          if (bill.items && bill.items.length > 0) {
+            setItems(bill.items.map(item => ({
+              inventoryItemId: String(item.inventoryItemId),
+              quantity: item.quantity,
+              unitPrice: Number(item.unitPrice),
+              discount: Number(item.discount),
+              discountType: item.discountType || "percent",
+              taxRate: Number(item.taxRate),
+              itemName: item.itemName,
+            })));
+          }
+        }
+      }).catch(() => {
+        toast.error("Could not load return bill");
+      });
+    }
+  }, []);
+
   // Bill form state
   const [status, setStatus] = useState("unpaid");
   const [paidAmount, setPaidAmount] = useState("");
   const [dueDate, setDueDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState("");
-  const [items, setItems] = useState([{ inventoryItemId: "", quantity: 1, unitPrice: 0, discount: 0, taxRate: 18, itemName: "" }]);
+  const [billDiscount, setBillDiscount] = useState(0);
+  const [billDiscountType, setBillDiscountType] = useState("percent");
+  const [items, setItems] = useState([{ inventoryItemId: "", quantity: 0, unitPrice: 0, discount: 0, discountType: "percent", taxRate: 0, itemName: "" }]);
 
   const { data: inventory = [] } = useQuery({
     queryKey: ["inventory"], queryFn: async () => {
@@ -343,34 +519,70 @@ export default function NewBill() {
     onError: (e) => toast.error(e.response?.data?.error || "Failed to create bill"),
   });
 
+  const emptyItem = () => ({ inventoryItemId: "", quantity: 0, unitPrice: 0, discount: 0, discountType: "percent", taxRate: 0, itemName: "" });
+
   // Item handlers
   const handleItemChange = (idx, field, value) => {
     const updated = [...items];
     updated[idx] = { ...updated[idx], [field]: value };
     if (field === "inventoryItemId") {
       const inv = inventory.find(i => i.id === +value);
-      if (inv) { updated[idx].unitPrice = inv.sellingPrice; updated[idx].taxRate = inv.taxRate; }
-      updated[idx].itemName = inv?.name || "";
+      if (inv) {
+        updated[idx].unitPrice = Number(inv.sellingPrice) || 0;
+        updated[idx].taxRate = Number(inv.taxRate) || 0;
+        updated[idx].itemName = inv.name || "";
+        updated[idx].quantity = 1;
+        updated[idx].discount = 0;
+        updated[idx].discountType = "percent";
+      } else {
+        updated[idx].unitPrice = 0;
+        updated[idx].taxRate = 0;
+        updated[idx].itemName = "";
+        updated[idx].quantity = 0;
+      }
+      // Auto-add a new empty row if this is the last row and an item was selected
+      if (value && idx === updated.length - 1) {
+        updated.push(emptyItem());
+      }
     }
     setItems(updated);
   };
 
-  const addItem = () => setItems(v => [...v, { inventoryItemId: "", quantity: 1, unitPrice: 0, discount: 0, taxRate: 18, itemName: "" }]);
-  const removeItem = (idx) => setItems(v => v.filter((_, i) => i !== idx));
+  const removeItem = (idx) => {
+    const updated = items.filter((_, i) => i !== idx);
+    if (updated.length === 0) {
+      setItems([emptyItem()]);
+    } else {
+      setItems(updated);
+    }
+  };
 
   // Calculations
+  const calcDiscount = (item) => {
+    const base = item.quantity * item.unitPrice;
+    if (item.discountType === "amount") return Math.min(Number(item.discount) || 0, base);
+    return base * ((Number(item.discount) || 0) / 100);
+  };
+
   const calcLine = (item) => {
     const base = item.quantity * item.unitPrice;
-    const disc = base * (item.discount / 100);
+    const disc = calcDiscount(item);
     const after = base - disc;
     const tax = after * (item.taxRate / 100);
     return after + tax;
   };
 
   const subtotal = items.reduce((a, i) => a + i.quantity * i.unitPrice, 0);
-  const discount = items.reduce((a, i) => a + i.quantity * i.unitPrice * (i.discount / 100), 0);
-  const tax = items.reduce((a, i) => a + (i.quantity * i.unitPrice - i.quantity * i.unitPrice * (i.discount / 100)) * (i.taxRate / 100), 0);
-  const total = subtotal - discount + tax;
+  const lineDiscount = items.reduce((a, i) => a + calcDiscount(i), 0);
+  const tax = items.reduce((a, i) => { const base = i.quantity * i.unitPrice; const d = calcDiscount(i); return a + (base - d) * (i.taxRate / 100); }, 0);
+  const afterLineDiscount = subtotal - lineDiscount + tax;
+  const calcBillDiscount = () => {
+    const val = Number(billDiscount) || 0;
+    if (billDiscountType === "amount") return Math.min(val, afterLineDiscount);
+    return afterLineDiscount * (Math.min(val, 100) / 100);
+  };
+  const billDiscountAmount = calcBillDiscount();
+  const total = afterLineDiscount - billDiscountAmount;
 
   // Quick Add callback — deferred (no API call)
   const handleQuickAdd = ({ customer, billCode: code, isNew }) => {
@@ -395,6 +607,7 @@ export default function NewBill() {
         quantity: item.quantity,
         unitPrice: Number(item.unitPrice),
         discount: Number(item.discount),
+        discountType: item.discountType || "percent",
         taxRate: Number(item.taxRate),
         itemName: item.itemName,
       })));
@@ -412,7 +625,8 @@ export default function NewBill() {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!selectedCustomer) { toast.error("Please add a customer first"); return; }
-    if (items.some(i => !i.inventoryItemId)) { toast.error("All items must have a product selected"); return; }
+    // Filter out blank item rows (no product selected)
+    const filledItems = items.filter(i => i.inventoryItemId);
     
     // Ensure we have a billCode to send to the backend
     const finalBillCode = billCode || generateRandomBillCode();
@@ -422,7 +636,7 @@ export default function NewBill() {
       status,
       dueDate: dueDate || null,
       notes: notes || null,
-      items: items.map(i => ({
+      items: filledItems.map(i => ({
         inventoryItemId: +i.inventoryItemId,
         quantity: +i.quantity,
         unitPrice: +i.unitPrice,
@@ -483,130 +697,191 @@ export default function NewBill() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-5">
-        {/* Customer Section */}
-        <div className="card p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-gray-900">Customer</h2>
-            {!selectedCustomer && (
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowQuickAdd(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 transition-colors shadow-sm"
-                >
-                  <UserPlus className="w-4 h-4" /> New
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowReturn(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors"
-                >
-                  <RotateCcw className="w-4 h-4" /> Return
-                </button>
+        {/* Customer + Bill Details — side by side */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {/* Customer Section */}
+          <div className="card p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold text-gray-900">Customer</h2>
+              {!selectedCustomer && (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowQuickAdd(true)}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 transition-colors shadow-sm"
+                  >
+                    <UserPlus className="w-4 h-4" /> New
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowReturn(true)}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors"
+                  >
+                    <RotateCcw className="w-4 h-4" /> Return
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {selectedCustomer ? (
+              <SelectedCustomerCard customer={selectedCustomer} billCode={billCode} isNew={isNewCustomer} onClear={clearCustomer} />
+            ) : (
+              <div className="text-center py-6 text-gray-400 text-sm border-2 border-dashed border-gray-200 rounded-xl">
+                Click <strong>New</strong> to add a walk-in customer or <strong>Return</strong> to load an existing bill
               </div>
             )}
           </div>
 
-          {selectedCustomer ? (
-            <SelectedCustomerCard customer={selectedCustomer} billCode={billCode} isNew={isNewCustomer} onClear={clearCustomer} />
-          ) : (
-            <div className="text-center py-6 text-gray-400 text-sm border-2 border-dashed border-gray-200 rounded-xl">
-              Click <strong>New</strong> to add a walk-in customer or <strong>Return</strong> to load an existing bill
+          {/* Bill Details Section */}
+          <div className="card p-5 space-y-4">
+            <h2 className="font-semibold text-gray-900">Bill Details</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select className="input" value={status} onChange={e => {
+                  const newStatus = e.target.value;
+                  setStatus(newStatus);
+                  if (newStatus !== "partial") setPaidAmount("");
+                  if (newStatus === "paid" || newStatus === "quotation") setDueDate(new Date().toISOString().split('T')[0]);
+                }}>
+                  <option value="unpaid">Unpaid</option>
+                  <option value="paid">Paid</option>
+                  <option value="partial">Partial Paid</option>
+                  <option value="quotation">Quotation</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {status === "paid" || status === "quotation" ? "Current Date" : "Due Date"}
+                </label>
+                <input className="input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+              </div>
             </div>
-          )}
-        </div>
-
-        {/* Bill Details */}
-        <div className="card p-5 grid grid-cols-2 md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-            <select className="input" value={status} onChange={e => { setStatus(e.target.value); if (e.target.value !== "partial") setPaidAmount(""); }}>
-              <option value="unpaid">Unpaid</option>
-              <option value="paid">Paid</option>
-              <option value="partial">Partial Paid</option>
-              <option value="draft">Draft</option>
-            </select>
-          </div>
-          {status === "partial" && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Paid Amount (₹)</label>
-              <input
-                className="input"
-                type="number"
-                step="0.01"
-                min="0"
-                max={total}
-                placeholder="0"
-                value={paidAmount}
-                onChange={e => setPaidAmount(e.target.value)}
-              />
-              {total > 0 && paidAmount && (
-                <p className="text-xs text-gray-500 mt-1">
-                  Remaining: {formatINR(total - Number(paidAmount))}
-                </p>
-              )}
-            </div>
-          )}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
-            <input className="input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+            {status === "partial" && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Paid Amount (₹)</label>
+                <input
+                  className="input"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max={total}
+                  placeholder="0"
+                  value={paidAmount}
+                  onChange={e => setPaidAmount(e.target.value)}
+                />
+                {total > 0 && paidAmount && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Remaining: {formatINR(total - Number(paidAmount))}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
         {/* Items */}
         <div className="card p-5 space-y-4">
           <h2 className="font-semibold text-gray-900">Items</h2>
-          <div className="space-y-3">
+
+          {/* Column Headers */}
+          <div className="grid items-center gap-3" style={{ gridTemplateColumns: '2.5fr 0.7fr 1fr 1.3fr 0.8fr 1fr 40px' }}>
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Item</span>
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Qty</span>
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Price (₹)</span>
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Discount</span>
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">GST</span>
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Total</span>
+            <span></span>
+          </div>
+
+          {/* Item Rows */}
+          <div className="space-y-2">
             {items.map((item, idx) => (
-              <div key={idx} className="grid grid-cols-12 gap-2 items-end bg-gray-50 p-3 rounded-lg">
-                <div className="col-span-12 md:col-span-4">
-                  <label className="text-xs text-gray-500">Product</label>
+              <div
+                key={idx}
+                className="grid items-center gap-3 bg-white border border-gray-200 rounded-xl px-3 py-2.5"
+                style={{ gridTemplateColumns: '2.5fr 0.7fr 1fr 1.3fr 0.8fr 1fr 40px' }}
+              >
+                {/* Item Search Select */}
+                <SearchableItemSelect
+                  inventory={inventory}
+                  value={item.inventoryItemId}
+                  onChange={val => handleItemChange(idx, "inventoryItemId", val)}
+                />
+
+                {/* Qty */}
+                <input
+                  className="input text-sm text-center"
+                  type="number"
+                  min="0"
+                  value={item.quantity}
+                  onChange={e => handleItemChange(idx, "quantity", e.target.value)}
+                />
+
+                {/* Price */}
+                <input
+                  className="input text-sm"
+                  type="number"
+                  step="0.01"
+                  value={item.unitPrice}
+                  onChange={e => handleItemChange(idx, "unitPrice", e.target.value)}
+                />
+
+                {/* Discount — input + % badge */}
+                <div className="flex items-center gap-1">
+                  <input
+                    className="input text-sm flex-1"
+                    type="number"
+                    min="0"
+                    max={item.discountType === "percent" ? "100" : undefined}
+                    value={item.discount}
+                    onChange={e => handleItemChange(idx, "discount", e.target.value)}
+                  />
                   <select
-                    className="input mt-1"
-                    value={item.inventoryItemId}
-                    onChange={e => handleItemChange(idx, "inventoryItemId", e.target.value)}
+                    className="appearance-none px-2 py-1.5 rounded-md bg-gray-100 border border-gray-200 text-xs font-semibold text-gray-600 cursor-pointer hover:bg-gray-200 transition-colors focus:outline-none focus:ring-1 focus:ring-blue-300"
+                    value={item.discountType}
+                    onChange={e => handleItemChange(idx, "discountType", e.target.value)}
+                    title="Discount type"
                   >
-                    <option value="">— Select product —</option>
-                    {inventory.map(i => (
-                      <option key={i.id} value={i.id}>{i.name} (Stock: {i.currentQuantity} {i.unit})</option>
-                    ))}
+                    <option value="percent">%</option>
+                    <option value="amount">₹</option>
                   </select>
                 </div>
-                <div className="col-span-3 md:col-span-2">
-                  <label className="text-xs text-gray-500">Qty</label>
-                  <input className="input mt-1" type="number" min="1" value={item.quantity}
-                    onChange={e => handleItemChange(idx, "quantity", e.target.value)} />
-                </div>
-                <div className="col-span-3 md:col-span-2">
-                  <label className="text-xs text-gray-500">Unit Price (₹)</label>
-                  <input className="input mt-1" type="number" step="0.01" value={item.unitPrice}
-                    onChange={e => handleItemChange(idx, "unitPrice", e.target.value)} />
-                </div>
-                <div className="col-span-3 md:col-span-2">
-                  <label className="text-xs text-gray-500">Discount %</label>
-                  <input className="input mt-1" type="number" min="0" max="100" value={item.discount}
-                    onChange={e => handleItemChange(idx, "discount", e.target.value)} />
-                </div>
-                <div className="col-span-2 md:col-span-1">
-                  <label className="text-xs text-gray-500">GST %</label>
-                  <input className="input mt-1" type="number" value={item.taxRate}
-                    onChange={e => handleItemChange(idx, "taxRate", e.target.value)} />
-                </div>
-                <div className="col-span-1 flex flex-col items-end gap-1">
-                  <label className="text-xs text-gray-500">Total</label>
-                  <span className="text-sm font-semibold text-gray-900 mt-1">{formatINR(calcLine(item))}</span>
-                </div>
-                {items.length > 1 && (
-                  <div className="col-span-1 flex justify-end">
-                    <button type="button" className="btn-danger p-1.5 mt-1" onClick={() => removeItem(idx)}>
-                      <Trash2 className="w-3 h-3" />
+
+                {/* GST */}
+                <input
+                  className="input text-sm text-center"
+                  type="number"
+                  value={item.taxRate}
+                  onChange={e => handleItemChange(idx, "taxRate", e.target.value)}
+                />
+
+                {/* Total */}
+                <span className="text-sm font-semibold text-gray-900 text-right whitespace-nowrap">
+                  {formatINR(calcLine(item))}
+                </span>
+
+                {/* Delete */}
+                <div className="flex justify-center">
+                  {items.length > 1 ? (
+                    <button
+                      type="button"
+                      className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      onClick={() => removeItem(idx)}
+                      title="Remove item"
+                    >
+                      <Trash2 className="w-4 h-4" />
                     </button>
-                  </div>
-                )}
+                  ) : (
+                    <span className="w-7" />
+                  )}
+                </div>
               </div>
             ))}
           </div>
-          <button type="button" className="btn-outline gap-2 text-sm" onClick={addItem}>
+
+          <button type="button" className="btn-outline gap-2 text-sm" onClick={() => setItems(v => [...v, emptyItem()])}>
             <Plus className="w-4 h-4" /> Add Item
           </button>
         </div>
@@ -614,27 +889,88 @@ export default function NewBill() {
         {/* Summary */}
         <div className="card p-5">
           <div className="flex gap-5">
+            {/* Notes */}
             <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-              <textarea className="input h-24 resize-none" placeholder="Thank you for your business!"
+              <label className="block text-sm font-semibold text-gray-800 mb-1">Notes</label>
+              <textarea className="input h-32 resize-none" placeholder="Optional notes for this bill..."
                 value={notes} onChange={e => setNotes(e.target.value)} />
             </div>
-            <div className="w-64 space-y-2 text-sm">
-              <div className="flex justify-between text-gray-600"><span>Subtotal</span><span>{formatINR(subtotal)}</span></div>
-              <div className="flex justify-between text-green-600"><span>Discount</span><span>-{formatINR(discount)}</span></div>
-              <div className="flex justify-between text-gray-600"><span>GST</span><span>+{formatINR(tax)}</span></div>
-              <div className="flex justify-between font-bold text-lg text-gray-900 border-t pt-2">
-                <span>Total</span><span>{formatINR(total)}</span>
+
+            {/* Totals */}
+            <div className="w-72 space-y-2.5 text-sm">
+              {/* Subtotal */}
+              <div className="flex justify-between text-gray-600">
+                <span>Subtotal</span>
+                <span>{formatINR(subtotal)}</span>
               </div>
+
+              {/* Line Discount */}
+              <div className="flex justify-between text-orange-600">
+                <span>Line Discount</span>
+                <span>- {formatINR(lineDiscount)}</span>
+              </div>
+
+              {/* GST */}
+              <div className="flex justify-between text-gray-600">
+                <span>GST</span>
+                <span>{formatINR(tax)}</span>
+              </div>
+
+              {/* Bill Discount */}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-gray-600 shrink-0">Bill Discount</span>
+                <div className="flex items-center gap-1">
+                  <input
+                    className="input text-sm w-20 text-center"
+                    type="number"
+                    min="0"
+                    max={billDiscountType === "percent" ? "100" : undefined}
+                    value={billDiscount}
+                    onChange={e => setBillDiscount(e.target.value)}
+                  />
+                  <select
+                    className="appearance-none px-2 py-1.5 rounded-md bg-gray-100 border border-gray-200 text-xs font-semibold text-gray-600 cursor-pointer hover:bg-gray-200 transition-colors focus:outline-none focus:ring-1 focus:ring-blue-300"
+                    value={billDiscountType}
+                    onChange={e => setBillDiscountType(e.target.value)}
+                    title="Discount type"
+                  >
+                    <option value="percent">%</option>
+                    <option value="amount">₹</option>
+                  </select>
+                </div>
+                <span className="text-orange-600 shrink-0">- {formatINR(billDiscountAmount)}</span>
+              </div>
+
+              {/* Total */}
+              <div className="flex justify-between font-bold text-lg text-gray-900 border-t pt-2.5 mt-1">
+                <span>Total</span>
+                <span className="text-orange-600">{formatINR(total)}</span>
+              </div>
+
+              {/* Create Bill Button */}
+              <button
+                type="submit"
+                className="w-full mt-2 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-500 hover:to-orange-500 disabled:opacity-50 transition-all shadow-sm"
+                disabled={createMutation.isPending}
+              >
+                {createMutation.isPending ? "Creating…" : "Create Bill"}
+              </button>
             </div>
           </div>
+
+          {/* Total in words */}
+          {total > 0 && (
+            <div className="mt-4 pt-4 border-t border-dashed border-gray-200">
+              <p className="text-sm text-gray-700">
+                <span className="font-bold text-gray-900">Total (in words) : </span>
+                <span className="font-medium italic">{numberToWordsINR(total)}</span>
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="flex justify-end gap-3">
           <button type="button" className="btn-outline" onClick={() => navigate("/bills")}>Cancel</button>
-          <button type="submit" className="btn-primary" disabled={createMutation.isPending}>
-            {createMutation.isPending ? "Creating…" : "Create Bill"}
-          </button>
         </div>
       </form>
     </div>

@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { apiClient, formatINR, formatDate } from "@/lib/api";
 import { ArrowLeft, Printer } from "lucide-react";
+import { generateInvoicePDF } from "@/lib/invoicePDF";
 
 export default function BillDetail() {
   const { id } = useParams();
@@ -47,7 +48,10 @@ export default function BillDetail() {
               disabled={updateMutation.isPending}
             >Mark as Paid</button>
           )}
-          <button className="btn-outline gap-2" onClick={() => window.print()}>
+          <button
+            className="btn-outline gap-2"
+            onClick={() => generateInvoicePDF(bill, { autoPrint: true })}
+          >
             <Printer className="w-4 h-4" /> Print
           </button>
         </div>
