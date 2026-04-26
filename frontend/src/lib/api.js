@@ -2,7 +2,140 @@ import axios from "axios";
 
 const api = axios.create({ baseURL: "/api" });
 
+// ============================================================================
+// TOKEN MANAGEMENT
+// ============================================================================
+
+const TOKEN_KEYS = {
+  access: "vyapar_access_token",
+  refresh: "vyapar_refresh_token",
+};
+
+export function getAccessToken() {
+  return localStorage.getItem(TOKEN_KEYS.access);
+}
+
+export function getRefreshToken() {
+  return localStorage.getItem(TOKEN_KEYS.refresh);
+}
+
+export function setTokens(accessToken, refreshToken) {
+  localStorage.setItem(TOKEN_KEYS.access, accessToken);
+  localStorage.setItem(TOKEN_KEYS.refresh, refreshToken);
+}
+
+export function clearTokens() {
+  localStorage.removeItem(TOKEN_KEYS.access);
+  localStorage.removeItem(TOKEN_KEYS.refresh);
+}
+
+// ============================================================================
+// AXIOS INTERCEPTORS
+// ============================================================================
+
+// Request interceptor — attach access token to every request
+api.interceptors.request.use(
+  (config) => {
+    const token = getAccessToken();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Response interceptor — auto-refresh on 401
+let isRefreshing = false;
+let failedQueue = [];
+
+function processQueue(error, tokens = null) {
+  failedQueue.forEach((prom) => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(tokens);
+    }
+  });
+  failedQueue = [];
+}
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+
+    // Only attempt refresh for 401 errors, not on auth endpoints themselves
+    if (
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      !originalRequest.url.includes("/auth/login") &&
+      !originalRequest.url.includes("/auth/register") &&
+      !originalRequest.url.includes("/auth/refresh")
+    ) {
+      if (isRefreshing) {
+        // Queue the request while refresh is in progress
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        }).then((tokens) => {
+          originalRequest.headers.Authorization = `Bearer ${tokens.accessToken}`;
+          return api(originalRequest);
+        });
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      const storedRefreshToken = getRefreshToken();
+
+      if (!storedRefreshToken) {
+        isRefreshing = false;
+        clearTokens();
+        window.location.href = "/login";
+        return Promise.reject(error);
+      }
+
+      try {
+        const { data } = await axios.post("/api/auth/refresh", {
+          refreshToken: storedRefreshToken,
+        });
+
+        // Store the rotated tokens
+        setTokens(data.accessToken, data.refreshToken);
+
+        // Update the authorization header for the original request
+        originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
+
+        // Process queued requests
+        processQueue(null, { accessToken: data.accessToken });
+
+        return api(originalRequest);
+      } catch (refreshError) {
+        processQueue(refreshError, null);
+        clearTokens();
+        window.location.href = "/login";
+        return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
+      }
+    }
+
+    return Promise.reject(error);
+  }
+);
+
+// ============================================================================
+// API CLIENT
+// ============================================================================
+
 export const apiClient = {
+  // Auth
+  login:          (data) => api.post("/auth/login", data).then(r => r.data),
+  register:       (data) => api.post("/auth/register", data).then(r => r.data),
+  refresh:        (data) => api.post("/auth/refresh", data).then(r => r.data),
+  logout:         (data) => api.post("/auth/logout", data).then(r => r.data),
+  getMe:          ()     => api.get("/auth/me").then(r => r.data),
+
   // Dashboard
   getDashboardSummary:       () => api.get("/dashboard/summary").then(r => r.data),
   getDashboardActivity:      () => api.get("/dashboard/recent-activity").then(r => r.data),
@@ -37,6 +170,7 @@ export const apiClient = {
   createBill:                (data) => api.post("/bills", data).then(r => r.data),
   updateBill:                (id, data) => api.patch(`/bills/${id}`, data).then(r => r.data),
   deleteBill:                (id) => api.delete(`/bills/${id}`),
+  getBillByCode:             (code) => api.get(`/bills/code/${code}`).then(r => r.data),
 
   // Analytics
   getSalesAnalytics:         () => api.get("/analytics/sales").then(r => r.data),

@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
+import { useDispatch, useSelector } from "react-redux";
 import {
-  LayoutDashboard, Users, FileText, Package, Truck, BarChart3, Settings, Menu, X
+  LayoutDashboard, Users, FileText, Package, Truck, BarChart3, Settings, Menu, X, LogOut
 } from "lucide-react";
+import { logoutUser } from "../redux/slices/authSlice";
 
 const NAV_ITEMS = [
   { href: "/",           icon: LayoutDashboard, label: "Dashboard" },
@@ -15,11 +17,19 @@ const NAV_ITEMS = [
 ];
 
 export function Layout({ children }) {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
+  const dispatch = useDispatch();
+  const { user } = useSelector((s) => s.auth);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => setMobileOpen(false), [location]);
+
+  const handleLogout = () => {
+    dispatch(logoutUser()).then(() => {
+      navigate("/login");
+    });
+  };
 
   return (
     <div className="min-h-screen flex bg-gray-50">
@@ -75,6 +85,27 @@ export function Layout({ children }) {
             );
           })}
         </nav>
+
+        {/* Logout section */}
+        <div className="border-t border-[hsl(222,15%,20%)] p-2 shrink-0">
+          {!collapsed && user && (
+            <div className="px-3 py-2 mb-1">
+              <p className="text-sm font-medium text-white truncate">{user.firstName} {user.lastName}</p>
+              <p className="text-xs text-gray-400 truncate">{user.email}</p>
+            </div>
+          )}
+          <button
+            onClick={handleLogout}
+            className={`
+              w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+              text-gray-400 hover:bg-red-500/10 hover:text-red-400
+              ${collapsed ? "justify-center" : ""}
+            `}
+          >
+            <LogOut className="w-5 h-5 shrink-0" />
+            {!collapsed && <span>Sign Out</span>}
+          </button>
+        </div>
       </aside>
 
       {/* Main */}

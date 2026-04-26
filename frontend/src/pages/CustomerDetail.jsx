@@ -14,7 +14,10 @@ export default function CustomerDetail() {
   });
   const { data: bills = [] } = useQuery({
     queryKey: ["bills", { customerId: id }],
-    queryFn: () => apiClient.getBills({ customerId: id }),
+    queryFn: async () => {
+      const response = await apiClient.getBills({ customerId: id });
+      return response.data || response.bills || response || [];
+    }
   });
 
   const updateMutation = useMutation({
@@ -25,7 +28,7 @@ export default function CustomerDetail() {
   if (isLoading) return <p className="text-center py-20 text-gray-400">Loading…</p>;
   if (!customer) return <p className="text-center py-20 text-red-500">Customer not found.</p>;
 
-  const outstanding = customer.totalBilled - customer.totalPaid;
+  const outstanding = Number(customer.totalBilled || 0) - Number(customer.totalPaid || 0);
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -42,9 +45,9 @@ export default function CustomerDetail() {
       {/* Balance Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         {[
-          { label: "Total Billed",   value: formatINR(customer.totalBilled),  color: "text-gray-900" },
-          { label: "Total Paid",     value: formatINR(customer.totalPaid),     color: "text-emerald-600" },
-          { label: "Outstanding",    value: formatINR(outstanding),            color: outstanding > 0 ? "text-red-600" : "text-gray-400" },
+          { label: "Total Billed", value: formatINR(customer.totalBilled), color: "text-gray-900" },
+          { label: "Total Paid", value: formatINR(customer.totalPaid), color: "text-emerald-600" },
+          { label: "Outstanding", value: formatINR(outstanding), color: outstanding > 0 ? "text-red-600" : "text-gray-400" },
         ].map(c => (
           <div key={c.label} className="card p-4">
             <p className="text-xs text-gray-500 mb-1">{c.label}</p>
@@ -58,11 +61,11 @@ export default function CustomerDetail() {
         <h2 className="font-semibold text-gray-900 mb-4">Customer Details</h2>
         <dl className="grid grid-cols-2 gap-4 text-sm">
           {[
-            { label: "Address",      value: customer.address },
-            { label: "GST Number",   value: customer.gstNumber },
-            { label: "PAN Number",   value: customer.panNumber },
+            { label: "Address", value: customer.address },
+            { label: "GST Number", value: customer.gstNumber },
+            { label: "PAN Number", value: customer.panNumber },
             { label: "Credit Limit", value: customer.creditLimit ? formatINR(customer.creditLimit) : "Not set" },
-            { label: "Joined",       value: formatDate(customer.createdAt) },
+            { label: "Joined", value: formatDate(customer.createdAt) },
           ].map(({ label, value }) => (
             <div key={label}>
               <dt className="text-gray-500 text-xs font-medium uppercase tracking-wide">{label}</dt>

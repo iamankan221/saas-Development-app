@@ -9,6 +9,12 @@ export const config = {
   database: {
     url: process.env.DATABASE_URL,
   },
+  jwt: {
+    secret: process.env.JWT_SECRET || "default-jwt-secret",
+    refreshSecret: process.env.JWT_REFRESH_SECRET || "default-refresh-secret",
+    expiry: process.env.JWT_EXPIRY || "5m",
+    refreshExpiry: process.env.JWT_REFRESH_EXPIRY || "30m",
+  },
 };
 
 if (!config.database.url) {

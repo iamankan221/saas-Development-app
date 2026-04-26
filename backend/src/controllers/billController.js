@@ -33,7 +33,16 @@ export const billController = {
       const bill = await billService.create(req.body);
       res.status(201).json(bill);
     } catch (error) {
-      res.status(400).json({ error: error.message });
+      console.log(error);
+      // Return user-friendly error, never expose Prisma internals
+      const msg = error.code === "P2002"
+        ? "A bill with that number already exists"
+        : error.code === "P2003"
+          ? "Invalid customer or product reference"
+          : error.message?.includes("prisma")
+            ? "Failed to create bill. Please check your input."
+            : error.message || "Failed to create bill";
+      res.status(400).json({ error: msg });
     }
   },
 
@@ -54,6 +63,16 @@ export const billController = {
       res.json({ message: "Bill deleted" });
     } catch (error) {
       res.status(400).json({ error: error.message });
+    }
+  },
+
+  // Get bill by bill code (for returns)
+  async getByBillCode(req, res) {
+    try {
+      const bill = await billService.findByBillCode(req.params.billCode);
+      res.json(bill);
+    } catch (error) {
+      res.status(404).json({ error: error.message });
     }
   },
 

@@ -11,6 +11,7 @@ BigInt.prototype.toJSON = function () {
 };
 
 // Routes
+import authRoutes from "./routes/authRoutes.js";
 import customerRoutes from "./routes/customerRoutes.js";
 import billRoutes from "./routes/billRoutes.js";
 import inventoryRoutes from "./routes/inventoryRoutes.js";
@@ -34,6 +35,9 @@ app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 // ============================================================================
 // API ROUTES
 // ============================================================================
+
+// Auth Routes (public — no auth middleware)
+app.use("/api/auth", authRoutes);
 
 // Dashboard Routes
 app.use("/api/dashboard", dashboardRoutes);

@@ -9,7 +9,7 @@ datasource db {
 model Customer {
   id           Int           @id @default(autoincrement())
   name         String        @db.VarChar(255)
-  phone        String        @unique @db.VarChar(20)
+  phone        String?       @unique @db.VarChar(20)
   email        String?       @unique @db.VarChar(255)
   address      String?
   gstNumber    String?       @unique @db.VarChar(50)
@@ -85,6 +85,7 @@ model InventoryItem {
 model Bill {
   id             Int           @id @default(autoincrement())
   billNumber     String        @unique @db.VarChar(50)
+  billCode       String        @unique @db.VarChar(10)
   customerId     Int
   customerName   String        @db.VarChar(255)
   subtotal       BigInt
@@ -210,4 +211,34 @@ model StockMovement {
   @@index([type])
   @@index([createdAt])
   @@map("stock_movements")
+}
+
+model User {
+  id            Int            @id @default(autoincrement())
+  firstName     String         @db.VarChar(100)
+  lastName      String         @db.VarChar(100)
+  email         String         @unique @db.VarChar(255)
+  phone         String         @unique @db.VarChar(20)
+  password      String
+  status        String         @default("active")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  refreshTokens RefreshToken[]
+
+  @@index([email])
+  @@index([phone])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique @db.VarChar(512)
+  userId    Int
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@map("refresh_tokens")
 }
