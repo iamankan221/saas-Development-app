@@ -31,8 +31,38 @@ export const customerService = {
       prisma.customer.count({ where }),
     ]);
 
+    // Compute totalBilled and totalPaid from bills for each customer
+    const customerIds = customers.map(c => c.id);
+
+    const billAggregates = await prisma.bill.groupBy({
+      by: ["customerId"],
+      where: { customerId: { in: customerIds } },
+      _sum: {
+        totalAmount: true,
+        paidAmount: true,
+      },
+    });
+
+    const aggregateMap = {};
+    for (const agg of billAggregates) {
+      aggregateMap[agg.customerId] = {
+        totalBilled: Number(agg._sum.totalAmount || 0n),
+        totalPaid: Number(agg._sum.paidAmount || 0n),
+      };
+    }
+
+    const enrichedCustomers = customers.map(c => {
+      const agg = aggregateMap[c.id] || { totalBilled: 0, totalPaid: 0 };
+      return {
+        ...c,
+        totalBilled: agg.totalBilled,
+        totalPaid: agg.totalPaid,
+        outstandingBalance: agg.totalBilled - agg.totalPaid,
+      };
+    });
+
     return {
-      data: customers,
+      data: enrichedCustomers,
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     };
   },
@@ -45,7 +75,22 @@ export const customerService = {
     });
 
     if (!customer) throw new Error("Customer not found");
-    return customer;
+
+    // Compute totals from bills
+    const billTotals = await prisma.bill.aggregate({
+      where: { customerId: parseInt(id) },
+      _sum: {
+        totalAmount: true,
+        paidAmount: true,
+      },
+    });
+
+    return {
+      ...customer,
+      totalBilled: Number(billTotals._sum.totalAmount || 0n),
+      totalPaid: Number(billTotals._sum.paidAmount || 0n),
+      outstandingBalance: Number(billTotals._sum.totalAmount || 0n) - Number(billTotals._sum.paidAmount || 0n),
+    };
   },
 
   // Create customer
@@ -58,7 +103,6 @@ export const customerService = {
         address: data.address,
         gstNumber: data.gstNumber,
         panNumber: data.panNumber,
-        creditLimit: data.creditLimit,
       },
     });
     return customer;
@@ -74,7 +118,6 @@ export const customerService = {
         address: data.address,
         gstNumber: data.gstNumber,
         panNumber: data.panNumber,
-        creditLimit: data.creditLimit,
         status: data.status,
       },
     });
@@ -88,7 +131,7 @@ export const customerService = {
     });
   },
 
-  // Get customer balance
+  // Get customer balance (computed from bills)
   async getBalance(id) {
     const customer = await prisma.customer.findUnique({
       where: { id: parseInt(id) },
@@ -96,11 +139,45 @@ export const customerService = {
 
     if (!customer) throw new Error("Customer not found");
 
+    const billTotals = await prisma.bill.aggregate({
+      where: { customerId: parseInt(id) },
+      _sum: {
+        totalAmount: true,
+        paidAmount: true,
+      },
+    });
+
+    const totalBilled = Number(billTotals._sum.totalAmount || 0n);
+    const totalPaid = Number(billTotals._sum.paidAmount || 0n);
+
     return {
       customerId: customer.id,
-      totalBilled: customer.totalBilled,
-      totalPaid: customer.totalPaid,
-      balance: customer.totalBilled - customer.totalPaid,
+      totalBilled,
+      totalPaid,
+      balance: totalBilled - totalPaid,
     };
+  },
+
+  // Search customers by phone (for autocomplete)
+  async searchByPhone(phone) {
+    if (!phone || phone.length < 3) return [];
+
+    const customers = await prisma.customer.findMany({
+      where: {
+        phone: { contains: phone },
+        status: "active",
+      },
+      take: 5,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        email: true,
+        gstNumber: true,
+      },
+    });
+
+    return customers;
   },
 };

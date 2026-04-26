@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
@@ -9,6 +10,13 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
+  console.log("🌱 Clearing database before seeding...");
+  await prisma.billItem.deleteMany();
+  await prisma.bill.deleteMany();
+  await prisma.inventoryItem.deleteMany();
+  await prisma.customer.deleteMany();
+  await prisma.supplier.deleteMany();
+
   console.log("🌱 Seeding database with sample data...");
 
   // Seed Suppliers
@@ -56,9 +64,6 @@ async function main() {
         address: "12, MG Road, Bengaluru",
         gstNumber: "29AADCB2230M1ZP",
         panNumber: "AADCB2230M",
-        creditLimit: 50000,
-        totalBilled: 125000,
-        totalPaid: 110000,
       },
       {
         name: "Priya Mehta",
@@ -66,17 +71,12 @@ async function main() {
         email: "priya@mehta.in",
         address: "5, Koramangala, Bengaluru",
         panNumber: "BKNPM3392F",
-        creditLimit: 30000,
-        totalBilled: 87500,
-        totalPaid: 87500,
       },
       {
         name: "Suresh Nair",
         phone: "9900112233",
         address: "7, Indiranagar, Bengaluru",
         gstNumber: "32ABCDE1234F1Z5",
-        totalBilled: 54000,
-        totalPaid: 30000,
       },
       {
         name: "Ananya Rao",
@@ -84,9 +84,6 @@ async function main() {
         email: "ananya@rao.com",
         address: "3, Jayanagar, Bengaluru",
         panNumber: "CQQPR4567T",
-        creditLimit: 20000,
-        totalBilled: 32000,
-        totalPaid: 32000,
       },
       {
         name: "Kiran Patel",
@@ -95,9 +92,6 @@ async function main() {
         address: "22, Whitefield, Bengaluru",
         gstNumber: "24AAACF2222B1Z5",
         panNumber: "AAACF2222B",
-        creditLimit: 100000,
-        totalBilled: 210000,
-        totalPaid: 195000,
       },
     ],
   });
@@ -105,7 +99,9 @@ async function main() {
   console.log(`✅ Created ${customers.count} customers`);
 
   // Seed Inventory Items
-  const supplierId = 1;
+  const dbSuppliers = await prisma.supplier.findMany({ take: 1, orderBy: { id: 'desc' } });
+  const supplierId = dbSuppliers.length > 0 ? dbSuppliers[0].id : 1;
+
   const inventoryItems = await prisma.inventoryItem.createMany({
     data: [
       {
@@ -160,6 +156,78 @@ async function main() {
   });
 
   console.log(`✅ Created ${inventoryItems.count} inventory items`);
+
+  // Fetch created customers to use their IDs for bills
+  const dbCustomers = await prisma.customer.findMany({
+    take: 3,
+    orderBy: { id: 'desc' }
+  });
+
+  if (dbCustomers.length >= 3) {
+    // Seed Bills
+    const bills = await prisma.bill.createMany({
+      data: [
+        {
+          billNumber: "INV-0001",
+          billCode: "A1B2C3",
+          customerId: dbCustomers[0].id,
+          customerName: dbCustomers[0].name,
+          subtotal: 10000,
+          discountAmount: 0,
+          taxAmount: 500,
+          totalAmount: 10500,
+          paidAmount: 10500,
+          status: "paid",
+          createdAt: new Date("2024-04-20"),
+        },
+        {
+          billNumber: "INV-0002",
+          billCode: "D4E5F6",
+          customerId: dbCustomers[0].id,
+          customerName: dbCustomers[0].name,
+          subtotal: 20000,
+          discountAmount: 1000,
+          taxAmount: 950,
+          totalAmount: 19950,
+          paidAmount: 5000,
+          status: "partial",
+          createdAt: new Date("2024-04-22"),
+        },
+        {
+          billNumber: "INV-0003",
+          billCode: "G7H8I9",
+          customerId: dbCustomers[1].id,
+          customerName: dbCustomers[1].name,
+          subtotal: 50000,
+          discountAmount: 2000,
+          taxAmount: 2400,
+          totalAmount: 50400,
+          paidAmount: 50400,
+          status: "paid",
+          createdAt: new Date("2024-04-25"),
+        },
+        {
+          billNumber: "INV-0004",
+          billCode: "J0K1L2",
+          customerId: dbCustomers[2].id,
+          customerName: dbCustomers[2].name,
+          subtotal: 15000,
+          discountAmount: 0,
+          taxAmount: 750,
+          totalAmount: 15750,
+          paidAmount: 0,
+          status: "unpaid",
+          createdAt: new Date(),
+        }
+      ],
+    });
+
+    console.log(`✅ Created ${bills.count} bills`);
+  } else {
+    console.log("⚠️ Not enough customers to create bills");
+  }
+
+  // Note: We are not seeding BillItems here to keep it brief, but the totals will reflect correctly on the frontend due to the Bill entries.
 
   console.log("✨ Database seeding completed!");
 }

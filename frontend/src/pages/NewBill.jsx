@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { apiClient, formatINR } from "@/lib/api";
-import { ArrowLeft, Plus, Trash2, UserPlus, RotateCcw, X, Hash, Loader2 } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, UserPlus, RotateCcw, X, Hash, Loader2, Search } from "lucide-react";
 import { toast } from "@/lib/toast";
 
 // Helper to generate a 6-character hex bill code
@@ -12,15 +12,53 @@ function generateRandomBillCode() {
   return Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("").toUpperCase();
 }
 
+// Debounce hook
+function useDebounce(value, delay) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
+}
+
 // ============================================================================
-// QUICK ADD CUSTOMER MODAL
+// QUICK ADD CUSTOMER MODAL (with phone autocomplete, deferred creation)
 // ============================================================================
 
 function QuickAddCustomerModal({ onClose, onAdd }) {
   const [billCode] = useState(generateRandomBillCode);
   const [form, setForm] = useState({ name: "", phone: "", email: "", gstNumber: "" });
   const [errors, setErrors] = useState({});
-  const [loading, setLoading] = useState(false);
+
+  // Phone autocomplete state
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const debouncedPhone = useDebounce(form.phone.replace(/\D/g, ""), 300);
+  const phoneRef = useRef(null);
+
+  // Fetch suggestions when phone changes
+  useEffect(() => {
+    if (debouncedPhone.length >= 3) {
+      setLoadingSuggestions(true);
+      apiClient.searchCustomersByPhone(debouncedPhone)
+        .then((results) => {
+          setSuggestions(results);
+          setShowSuggestions(results.length > 0);
+        })
+        .catch(() => setSuggestions([]))
+        .finally(() => setLoadingSuggestions(false));
+    } else {
+      setSuggestions([]);
+      setShowSuggestions(false);
+    }
+  }, [debouncedPhone]);
+
+  const selectExistingCustomer = (customer) => {
+    setShowSuggestions(false);
+    onAdd({ customer, billCode, isNew: false });
+  };
 
   const validate = () => {
     const e = {};
@@ -29,45 +67,23 @@ function QuickAddCustomerModal({ onClose, onAdd }) {
     return Object.keys(e).length === 0;
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
     if (!validate()) return;
-    setLoading(true);
 
     const customerName = form.name.trim() || `Walk-in #${billCode}`;
 
-    try {
-      // Try creating the customer
-      const customer = await apiClient.createCustomer({
+    // Don't create via API — just pass local data
+    onAdd({
+      customer: {
         name: customerName,
         phone: form.phone.trim() || null,
         email: form.email.trim() || null,
         gstNumber: form.gstNumber.trim() || null,
-      });
-      toast.success("Walk-in customer added");
-      onAdd({ customer, billCode });
-    } catch (err) {
-      // If duplicate phone (409), try to find existing customer
-      if (err.response?.status === 409) {
-        try {
-          const result = await apiClient.getCustomers({ search: form.phone.trim() });
-          const customers = result.data || result || [];
-          const match = customers.find(c => c.phone === form.phone.trim());
-          if (match) {
-            toast.success("Customer selected from existing records");
-            onAdd({ customer: match, billCode });
-          } else {
-            toast.error("A customer with this phone exists but couldn't be found. Please try again.");
-          }
-        } catch {
-          toast.error("Failed to look up existing customer.");
-        }
-      } else {
-        toast.error(err.response?.data?.error || "Failed to create customer");
-      }
-    } finally {
-      setLoading(false);
-    }
+      },
+      billCode,
+      isNew: true,
+    });
   };
 
   return (
@@ -104,16 +120,52 @@ function QuickAddCustomerModal({ onClose, onAdd }) {
                 onChange={e => setForm(v => ({ ...v, name: e.target.value }))}
               />
             </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-800 mb-1.5">Phone *</label>
-              <input
-                className={`input ${errors.phone ? "border-red-400 focus:ring-red-400" : ""}`}
-                type="tel"
-                placeholder="9876543210"
-                value={form.phone}
-                onChange={e => setForm(v => ({ ...v, phone: e.target.value }))}
-              />
+            <div className="relative">
+              <label className="block text-sm font-semibold text-gray-800 mb-1.5">Phone</label>
+              <div className="relative">
+                <input
+                  ref={phoneRef}
+                  className={`input ${errors.phone ? "border-red-400 focus:ring-red-400" : ""}`}
+                  type="tel"
+                  placeholder="9876543210"
+                  value={form.phone}
+                  onChange={e => { setForm(v => ({ ...v, phone: e.target.value })); setShowSuggestions(true); }}
+                  onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+                  autoComplete="off"
+                />
+                {loadingSuggestions && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                  </div>
+                )}
+              </div>
               {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
+
+              {/* Autocomplete dropdown */}
+              {showSuggestions && suggestions.length > 0 && (
+                <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                  <div className="px-3 py-2 bg-gray-50 border-b">
+                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Existing Customers</p>
+                  </div>
+                  {suggestions.map(c => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-blue-50 transition-colors text-left"
+                      onClick={() => selectExistingCustomer(c)}
+                    >
+                      <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs shrink-0">
+                        {c.name?.charAt(0)?.toUpperCase() || "?"}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{c.name}</p>
+                        <p className="text-xs text-gray-500">{c.phone}</p>
+                      </div>
+                      <span className="text-[10px] font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">Select</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-800 mb-1.5">Email</label>
@@ -140,10 +192,9 @@ function QuickAddCustomerModal({ onClose, onAdd }) {
               <button type="button" className="btn-outline" onClick={onClose}>Cancel</button>
               <button
                 type="submit"
-                disabled={loading}
                 className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 transition-colors shadow-sm"
               >
-                {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Adding...</> : "Add & Select"}
+                Add & Select
               </button>
             </div>
           </form>
@@ -220,7 +271,7 @@ function ReturnBillModal({ onClose, onReturn }) {
 // SELECTED CUSTOMER CARD
 // ============================================================================
 
-function SelectedCustomerCard({ customer, billCode, onClear }) {
+function SelectedCustomerCard({ customer, billCode, isNew, onClear }) {
   return (
     <div className="flex items-center gap-4 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
       <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-sm">
@@ -230,6 +281,11 @@ function SelectedCustomerCard({ customer, billCode, onClear }) {
         <p className="font-semibold text-gray-900 truncate">{customer.name}</p>
         <p className="text-sm text-gray-500">{customer.phone}</p>
       </div>
+      {isNew && (
+        <span className="shrink-0 px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-[10px] font-semibold uppercase tracking-wide">
+          New
+        </span>
+      )}
       {billCode && (
         <span className="shrink-0 px-2.5 py-1 rounded-lg bg-amber-100 text-amber-700 text-xs font-semibold tracking-wider">
           #{billCode}
@@ -256,13 +312,15 @@ export default function NewBill() {
 
   // Customer state
   const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [isNewCustomer, setIsNewCustomer] = useState(false);
   const [billCode, setBillCode] = useState("");
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [showReturn, setShowReturn] = useState(false);
 
   // Bill form state
   const [status, setStatus] = useState("unpaid");
-  const [dueDate, setDueDate] = useState("");
+  const [paidAmount, setPaidAmount] = useState("");
+  const [dueDate, setDueDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState([{ inventoryItemId: "", quantity: 1, unitPrice: 0, discount: 0, taxRate: 18, itemName: "" }]);
 
@@ -314,9 +372,10 @@ export default function NewBill() {
   const tax = items.reduce((a, i) => a + (i.quantity * i.unitPrice - i.quantity * i.unitPrice * (i.discount / 100)) * (i.taxRate / 100), 0);
   const total = subtotal - discount + tax;
 
-  // Quick Add callback
-  const handleQuickAdd = ({ customer, billCode: code }) => {
+  // Quick Add callback — deferred (no API call)
+  const handleQuickAdd = ({ customer, billCode: code, isNew }) => {
     setSelectedCustomer(customer);
+    setIsNewCustomer(isNew);
     setBillCode(code);
     setShowQuickAdd(false);
   };
@@ -324,6 +383,7 @@ export default function NewBill() {
   // Return callback — auto-populate from existing bill
   const handleReturn = (bill) => {
     setSelectedCustomer(bill.customer);
+    setIsNewCustomer(false);
     setBillCode(bill.billCode || "");
     setStatus(bill.status || "unpaid");
     if (bill.dueDate) setDueDate(bill.dueDate.split('T')[0]);
@@ -344,6 +404,7 @@ export default function NewBill() {
 
   const clearCustomer = () => {
     setSelectedCustomer(null);
+    setIsNewCustomer(false);
     setBillCode("");
   };
 
@@ -356,8 +417,7 @@ export default function NewBill() {
     // Ensure we have a billCode to send to the backend
     const finalBillCode = billCode || generateRandomBillCode();
 
-    createMutation.mutate({
-      customerId: selectedCustomer.id,
+    const payload = {
       billCode: finalBillCode,
       status,
       dueDate: dueDate || null,
@@ -370,7 +430,41 @@ export default function NewBill() {
         taxRate: +i.taxRate,
         itemName: i.itemName,
       })),
-    });
+    };
+
+    // If partial, validate and include paidAmount
+    if (status === "partial") {
+      const pAmount = Number(paidAmount);
+      if (!pAmount || pAmount <= 0) {
+        toast.error("Please enter a valid paid amount for partial payment");
+        return;
+      }
+      if (pAmount > total) {
+        toast.error(`Paid amount cannot exceed the total bill amount`);
+        return;
+      }
+      if (pAmount === total) {
+        payload.status = "paid";
+        payload.paidAmount = total;
+      } else {
+        payload.paidAmount = pAmount;
+      }
+    }
+
+    if (isNewCustomer) {
+      // Send newCustomer object — backend creates customer in same transaction
+      payload.newCustomer = {
+        name: selectedCustomer.name,
+        phone: selectedCustomer.phone,
+        email: selectedCustomer.email,
+        gstNumber: selectedCustomer.gstNumber,
+      };
+    } else {
+      // Existing customer
+      payload.customerId = selectedCustomer.id;
+    }
+
+    createMutation.mutate(payload);
   };
 
   return (
@@ -414,7 +508,7 @@ export default function NewBill() {
           </div>
 
           {selectedCustomer ? (
-            <SelectedCustomerCard customer={selectedCustomer} billCode={billCode} onClear={clearCustomer} />
+            <SelectedCustomerCard customer={selectedCustomer} billCode={billCode} isNew={isNewCustomer} onClear={clearCustomer} />
           ) : (
             <div className="text-center py-6 text-gray-400 text-sm border-2 border-dashed border-gray-200 rounded-xl">
               Click <strong>New</strong> to add a walk-in customer or <strong>Return</strong> to load an existing bill
@@ -426,12 +520,33 @@ export default function NewBill() {
         <div className="card p-5 grid grid-cols-2 md:grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-            <select className="input" value={status} onChange={e => setStatus(e.target.value)}>
+            <select className="input" value={status} onChange={e => { setStatus(e.target.value); if (e.target.value !== "partial") setPaidAmount(""); }}>
               <option value="unpaid">Unpaid</option>
               <option value="paid">Paid</option>
+              <option value="partial">Partial Paid</option>
               <option value="draft">Draft</option>
             </select>
           </div>
+          {status === "partial" && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Paid Amount (₹)</label>
+              <input
+                className="input"
+                type="number"
+                step="0.01"
+                min="0"
+                max={total}
+                placeholder="0"
+                value={paidAmount}
+                onChange={e => setPaidAmount(e.target.value)}
+              />
+              {total > 0 && paidAmount && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Remaining: {formatINR(total - Number(paidAmount))}
+                </p>
+              )}
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
             <input className="input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
@@ -458,7 +573,7 @@ export default function NewBill() {
                   </select>
                 </div>
                 <div className="col-span-3 md:col-span-2">
-                  <label className="text-xs te xt-gray-500">Qty</label>
+                  <label className="text-xs text-gray-500">Qty</label>
                   <input className="input mt-1" type="number" min="1" value={item.quantity}
                     onChange={e => handleItemChange(idx, "quantity", e.target.value)} />
                 </div>

@@ -26,8 +26,8 @@ export default function BillDetail() {
   if (!bill) return <p className="text-center py-20 text-red-500">Bill not found.</p>;
 
   const statusBadge = (s) => {
-    const map = { paid: "badge-green", unpaid: "badge-red", draft: "badge-yellow", cancelled: "badge-gray" };
-    return <span className={`badge ${map[s] || "badge-gray"} text-sm px-3 py-1`}>{s}</span>;
+    const map = { paid: "badge-green", unpaid: "badge-red", partial: "badge-yellow", draft: "badge-gray" };
+    return <span className={`badge ${map[s] || "badge-gray"} text-sm px-3 py-1`}>{s === "partial" ? "Partial Paid" : s}</span>;
   };
 
   return (
@@ -40,7 +40,7 @@ export default function BillDetail() {
         </div>
         <div className="flex items-center gap-2">
           {statusBadge(bill.status)}
-          {bill.status === "unpaid" && (
+          {(bill.status === "unpaid" || bill.status === "partial") && (
             <button
               className="btn-primary bg-green-600 hover:bg-green-700"
               onClick={() => updateMutation.mutate({ status: "paid" })}
@@ -111,6 +111,10 @@ export default function BillDetail() {
             <div className="flex justify-between font-bold text-base text-gray-900 border-t pt-2">
               <span>Total</span><span>{formatINR(bill.totalAmount)}</span>
             </div>
+            <div className="flex justify-between text-emerald-600"><span>Paid</span><span>{formatINR(bill.paidAmount || 0)}</span></div>
+            {Number(bill.totalAmount || 0) - Number(bill.paidAmount || 0) > 0 && (
+              <div className="flex justify-between text-red-600 font-semibold"><span>Balance Due</span><span>{formatINR(Number(bill.totalAmount || 0) - Number(bill.paidAmount || 0))}</span></div>
+            )}
           </div>
         </div>
 

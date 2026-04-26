@@ -5,7 +5,7 @@ import { apiClient, formatINR, formatDate } from "@/lib/api";
 import { Search, Plus, Trash2, Eye, Users } from "lucide-react";
 
 function CustomerModal({ onClose, onSave }) {
-  const [form, setForm] = useState({ name: "", phone: "", email: "", address: "", gstNumber: "", creditLimit: "" });
+  const [form, setForm] = useState({ name: "", phone: "", email: "", address: "", gstNumber: "" });
   const [errors, setErrors] = useState({});
 
   const validate = () => {
@@ -24,7 +24,6 @@ function CustomerModal({ onClose, onSave }) {
       email: form.email || null,
       address: form.address || null,
       gstNumber: form.gstNumber || null,
-      creditLimit: form.creditLimit ? +form.creditLimit : null,
     });
   };
 

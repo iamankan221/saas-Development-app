@@ -4,7 +4,7 @@ import { useLocation } from "wouter";
 import { apiClient, formatINR, formatDate } from "@/lib/api";
 import { Plus, Eye, Trash2, FileText } from "lucide-react";
 
-const STATUSES = ["all", "paid", "unpaid", "draft", "cancelled"];
+const STATUSES = ["all", "paid", "unpaid", "partial", "draft"];
 
 export default function Bills() {
   const [, navigate] = useLocation();
@@ -30,14 +30,15 @@ export default function Bills() {
   });
 
   const statusBadge = (s) => {
-    const map = { paid: "badge-green", unpaid: "badge-red", draft: "badge-yellow", cancelled: "badge-gray" };
-    return <span className={`badge ${map[s] || "badge-gray"}`}>{s}</span>;
+    const map = { paid: "badge-green", unpaid: "badge-red", partial: "badge-yellow", draft: "badge-gray" };
+    return <span className={`badge ${map[s] || "badge-gray"}`}>{s === "partial" ? "Partial Paid" : s}</span>;
   };
 
   const totals = {
-    total: bills.reduce((a, b) => a + b.totalAmount, 0),
-    paid: bills.filter(b => b.status === "paid").reduce((a, b) => a + b.totalAmount, 0),
-    unpaid: bills.filter(b => b.status === "unpaid").reduce((a, b) => a + b.totalAmount, 0),
+    total: bills.reduce((a, b) => a + Number(b.totalAmount), 0),
+    paid: bills.filter(b => b.status === "paid").reduce((a, b) => a + Number(b.totalAmount), 0),
+    unpaid: bills.filter(b => b.status === "unpaid").reduce((a, b) => a + Number(b.totalAmount), 0),
+    partial: bills.filter(b => b.status === "partial").reduce((a, b) => a + Number(b.paidAmount || 0), 0),
   };
 
   return (
@@ -53,11 +54,12 @@ export default function Bills() {
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: "Total",   value: formatINR(totals.total),  color: "text-gray-900" },
-          { label: "Paid",    value: formatINR(totals.paid),   color: "text-emerald-600" },
-          { label: "Unpaid",  value: formatINR(totals.unpaid), color: "text-red-600" },
+          { label: "Total",        value: formatINR(totals.total),   color: "text-gray-900" },
+          { label: "Paid",         value: formatINR(totals.paid),    color: "text-emerald-600" },
+          { label: "Unpaid",       value: formatINR(totals.unpaid),  color: "text-red-600" },
+          { label: "Partial Paid", value: formatINR(totals.partial), color: "text-amber-600" },
         ].map(c => (
           <div key={c.label} className="card p-4">
             <p className="text-xs text-gray-500">{c.label}</p>
@@ -78,7 +80,7 @@ export default function Bills() {
                 : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
             }`}
           >
-            {s.charAt(0).toUpperCase() + s.slice(1)}
+            {s === "partial" ? "Partial Paid" : s.charAt(0).toUpperCase() + s.slice(1)}
           </button>
         ))}
       </div>
@@ -105,6 +107,7 @@ export default function Bills() {
                 <th className="px-4 py-3 font-medium">Due Date</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium text-right">Amount</th>
+                <th className="px-4 py-3 font-medium text-right">Paid</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
@@ -121,9 +124,10 @@ export default function Bills() {
                   <td className="px-4 py-3 text-gray-500">{formatDate(b.dueDate)}</td>
                   <td className="px-4 py-3">{statusBadge(b.status)}</td>
                   <td className="px-4 py-3 text-right font-semibold">{formatINR(b.totalAmount)}</td>
+                  <td className="px-4 py-3 text-right text-emerald-600 font-medium">{formatINR(b.paidAmount || 0)}</td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1 justify-end">
-                      {b.status === "unpaid" && (
+                      {(b.status === "unpaid" || b.status === "partial") && (
                         <button
                           className="px-2 py-1 text-xs rounded bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"
                           onClick={e => { e.stopPropagation(); updateMutation.mutate({ id: b.id, data: { status: "paid" } }); }}

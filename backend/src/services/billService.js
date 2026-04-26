@@ -19,6 +19,15 @@ async function generateBillCode() {
   return crypto.randomBytes(4).toString("hex").toUpperCase();
 }
 
+/**
+ * Derive bill status from paidAmount vs totalAmount.
+ */
+function deriveStatus(paidAmount, totalAmount) {
+  if (paidAmount <= 0n) return "unpaid";
+  if (paidAmount >= totalAmount) return "paid";
+  return "partial";
+}
+
 export const billService = {
   // Get all bills with pagination
   async findAll(page = 1, limit = 10, filters = {}) {
@@ -78,20 +87,10 @@ export const billService = {
     return bill;
   },
 
-  // Create bill (accepts billCode from frontend, computes totals)
+  // Create bill (accepts newCustomer or customerId, computes totals)
   async create(data) {
     const billCode = data.billCode || await generateBillCode();
     const billNumber = data.billNumber || await billService.getNextBillNumber();
-
-    // Look up customer name
-    let customerName = data.customerName;
-    if (!customerName && data.customerId) {
-      const customer = await prisma.customer.findUnique({
-        where: { id: parseInt(data.customerId) },
-        select: { name: true },
-      });
-      customerName = customer?.name || "Walk-in";
-    }
 
     // Compute totals from items
     const itemsList = data.items || [];
@@ -115,20 +114,63 @@ export const billService = {
       taxAmount += lineTax;
     }
 
+    const totalAmount = subtotal - discountAmount + taxAmount;
     const finalTotalAmount = BigInt(Math.round(totalAmount));
 
+    // Determine paidAmount
+    let paidAmount = 0n;
+    if (data.status === "paid") {
+      paidAmount = finalTotalAmount;
+    } else if (data.paidAmount != null && Number(data.paidAmount) > 0) {
+      paidAmount = BigInt(Math.round(Number(data.paidAmount)));
+    }
+
+    // Derive status from paidAmount
+    const status = deriveStatus(paidAmount, finalTotalAmount);
+
     const bill = await prisma.$transaction(async (tx) => {
+      // If newCustomer is provided, create the customer first
+      let customerId = data.customerId ? parseInt(data.customerId) : null;
+      let customerName = data.customerName;
+
+      if (data.newCustomer && !customerId) {
+        const newCust = await tx.customer.create({
+          data: {
+            name: data.newCustomer.name || "Walk-in",
+            phone: data.newCustomer.phone || null,
+            email: data.newCustomer.email || null,
+            gstNumber: data.newCustomer.gstNumber || null,
+          },
+        });
+        customerId = newCust.id;
+        customerName = newCust.name;
+      }
+
+      // Look up customer name if not provided
+      if (!customerName && customerId) {
+        const customer = await tx.customer.findUnique({
+          where: { id: customerId },
+          select: { name: true },
+        });
+        customerName = customer?.name || "Walk-in";
+      }
+
+      if (!customerId) {
+        throw new Error("A customer or new customer details are required");
+      }
+
       const createdBill = await tx.bill.create({
         data: {
           billNumber,
           billCode,
-          customerId: parseInt(data.customerId),
+          customerId,
           customerName,
           subtotal: BigInt(Math.round(subtotal)),
           discountAmount: BigInt(Math.round(discountAmount)),
           taxAmount: BigInt(Math.round(taxAmount)),
           totalAmount: finalTotalAmount,
-          status: data.status || "unpaid",
+          paidAmount,
+          status,
           notes: data.notes || null,
           dueDate: data.dueDate ? new Date(data.dueDate) : null,
           items: {
@@ -152,15 +194,6 @@ export const billService = {
         include: { items: true },
       });
 
-      // Update customer totals
-      await tx.customer.update({
-        where: { id: parseInt(data.customerId) },
-        data: {
-          totalBilled: { increment: finalTotalAmount },
-          ...(createdBill.status === "paid" ? { totalPaid: { increment: finalTotalAmount } } : {}),
-        }
-      });
-
       return createdBill;
     });
 
@@ -175,34 +208,28 @@ export const billService = {
 
     if (!existingBill) throw new Error("Bill not found");
 
-    const bill = await prisma.$transaction(async (tx) => {
-      const updatedBill = await tx.bill.update({
-        where: { id: parseInt(id) },
-        data: {
-          status: data.status,
-          notes: data.notes,
-          dueDate: data.dueDate ? new Date(data.dueDate) : null,
-          paidDate: data.paidDate ? new Date(data.paidDate) : null,
-        },
-        include: { items: true },
-      });
+    // Determine new paidAmount and status
+    let paidAmount = existingBill.paidAmount;
+    if (data.paidAmount != null) {
+      paidAmount = BigInt(Math.round(Number(data.paidAmount)));
+    }
+    // If explicitly marking as paid, set paidAmount to totalAmount
+    if (data.status === "paid") {
+      paidAmount = existingBill.totalAmount;
+    }
 
-      // Handle totalPaid changes
-      if (data.status && existingBill.status !== data.status) {
-        if (data.status === "paid") {
-          await tx.customer.update({
-            where: { id: existingBill.customerId },
-            data: { totalPaid: { increment: existingBill.totalAmount } }
-          });
-        } else if (existingBill.status === "paid") {
-          await tx.customer.update({
-            where: { id: existingBill.customerId },
-            data: { totalPaid: { decrement: existingBill.totalAmount } }
-          });
-        }
-      }
+    const status = data.status === "draft" ? "draft" : deriveStatus(paidAmount, existingBill.totalAmount);
 
-      return updatedBill;
+    const bill = await prisma.bill.update({
+      where: { id: parseInt(id) },
+      data: {
+        status,
+        paidAmount,
+        notes: data.notes !== undefined ? data.notes : undefined,
+        dueDate: data.dueDate !== undefined ? (data.dueDate ? new Date(data.dueDate) : null) : undefined,
+        paidDate: status === "paid" ? new Date() : (data.paidDate ? new Date(data.paidDate) : null),
+      },
+      include: { items: true },
     });
 
     return bill;

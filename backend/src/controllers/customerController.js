@@ -66,4 +66,14 @@ export const customerController = {
       res.status(400).json({ error: error.message });
     }
   },
+
+  // Search customers by phone (for autocomplete)
+  async searchByPhone(req, res) {
+    try {
+      const customers = await customerService.searchByPhone(req.query.phone);
+      res.json(customers);
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  },
 };

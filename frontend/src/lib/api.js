@@ -147,6 +147,7 @@ export const apiClient = {
   updateCustomer:            (id, data) => api.patch(`/customers/${id}`, data).then(r => r.data),
   deleteCustomer:            (id) => api.delete(`/customers/${id}`),
   getCustomerBalance:        (id) => api.get(`/customers/${id}/balance`).then(r => r.data),
+  searchCustomersByPhone:    (phone) => api.get("/customers/search-phone", { params: { phone } }).then(r => r.data),
 
   // Inventory
   getInventory:              (params) => api.get("/inventory", { params }).then(r => r.data),
