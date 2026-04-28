@@ -21,7 +21,7 @@ export const customerService = {
       where.status = filters.status;
     }
 
-    const [customers, total] = await Promise.all([
+    const [customers, total, activeCount, globalBillAggs] = await Promise.all([
       prisma.customer.findMany({
         where,
         skip,
@@ -29,12 +29,33 @@ export const customerService = {
         orderBy: { createdAt: "desc" },
       }),
       prisma.customer.count({ where }),
+      prisma.customer.count({ where: { ...where, status: "active" } }),
+      prisma.bill.groupBy({
+        by: ["customerId"],
+        where: { customer: where },
+        _sum: {
+          totalAmount: true,
+          paidAmount: true,
+        },
+      }),
     ]);
 
-    // Compute totalBilled and totalPaid from bills for each customer
+    // Compute global debt stats from bill aggregates
+    let totalOutstanding = 0;
+    let debtCustomersCount = 0;
+    
+    for (const agg of globalBillAggs) {
+      const balance = Number(agg._sum.totalAmount || 0n) - Number(agg._sum.paidAmount || 0n);
+      if (balance > 0) {
+        totalOutstanding += balance;
+        debtCustomersCount++;
+      }
+    }
+
+    // Compute totalBilled and totalPaid from bills for each customer on CURRENT PAGE
     const customerIds = customers.map(c => c.id);
 
-    const billAggregates = await prisma.bill.groupBy({
+    const currentPageBillAggs = await prisma.bill.groupBy({
       by: ["customerId"],
       where: { customerId: { in: customerIds } },
       _sum: {
@@ -44,7 +65,7 @@ export const customerService = {
     });
 
     const aggregateMap = {};
-    for (const agg of billAggregates) {
+    for (const agg of currentPageBillAggs) {
       aggregateMap[agg.customerId] = {
         totalBilled: Number(agg._sum.totalAmount || 0n),
         totalPaid: Number(agg._sum.paidAmount || 0n),
@@ -63,6 +84,12 @@ export const customerService = {
 
     return {
       data: enrichedCustomers,
+      summary: {
+        total,
+        active: activeCount,
+        withDebt: debtCustomersCount,
+        totalOutstanding,
+      },
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     };
   },
@@ -77,24 +104,61 @@ export const customerService = {
     if (!customer) throw new Error("Customer not found");
 
     // Compute totals from bills
-    const billTotals = await prisma.bill.aggregate({
+    const billAggregates = await prisma.bill.aggregate({
       where: { customerId: parseInt(id) },
       _sum: {
         totalAmount: true,
         paidAmount: true,
       },
+      _count: { id: true },
+      _max: { createdAt: true }
     });
+
+    // Total profit calculation (Approximation using current purchasePrice)
+    const items = await prisma.billItem.findMany({
+      where: { bill: { customerId: parseInt(id) } },
+      include: { inventoryItem: { select: { purchasePrice: true } } }
+    });
+    
+    let totalProfit = 0;
+    for (const item of items) {
+      const sellPrice = Number(item.unitPrice);
+      const buyPrice = Number(item.inventoryItem?.purchasePrice || 0n);
+      const qty = item.quantity;
+      // subtotal in BillItem is usually (sellPrice * qty) - discount. 
+      // For simplicity, we use (sell - buy) * qty.
+      totalProfit += (sellPrice - buyPrice) * qty;
+    }
 
     return {
       ...customer,
-      totalBilled: Number(billTotals._sum.totalAmount || 0n),
-      totalPaid: Number(billTotals._sum.paidAmount || 0n),
-      outstandingBalance: Number(billTotals._sum.totalAmount || 0n) - Number(billTotals._sum.paidAmount || 0n),
+      totalBilled: Number(billAggregates._sum.totalAmount || 0n),
+      totalPaid: Number(billAggregates._sum.paidAmount || 0n),
+      outstandingBalance: Number(billAggregates._sum.totalAmount || 0n) - Number(billAggregates._sum.paidAmount || 0n),
+      billCount: billAggregates._count.id,
+      lastPurchaseDate: billAggregates._max.createdAt,
+      totalProfit: totalProfit
     };
   },
 
   // Create customer
   async create(data) {
+    if (data.phone) {
+      const existing = await prisma.customer.findUnique({ where: { phone: data.phone } });
+      if (existing) {
+        return await prisma.customer.update({
+          where: { id: existing.id },
+          data: {
+            name: data.name || existing.name,
+            email: data.email || existing.email,
+            address: data.address || existing.address,
+            gstNumber: data.gstNumber || existing.gstNumber,
+            panNumber: data.panNumber || existing.panNumber,
+          },
+        });
+      }
+    }
+
     const customer = await prisma.customer.create({
       data: {
         name: data.name,

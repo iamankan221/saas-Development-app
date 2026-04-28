@@ -1,43 +1,46 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { apiClient, formatDate } from "@/lib/api";
-import { Search, Plus, Trash2, Eye, Truck } from "lucide-react";
+import { apiClient, formatINR } from "@/lib/api";
+import { Plus, Search, Eye, Trash2, User, Phone, Receipt, Building2, X } from "lucide-react";
+import { toast } from "@/lib/toast";
 
 function SupplierModal({ onClose, onSave }) {
-  const [form, setForm] = useState({ name: "", contactPerson: "", phone: "", email: "", address: "", gstNumber: "", paymentTerms: "Net 30" });
+  const [form, setForm] = useState({ name: "", contactPerson: "", phone: "", email: "", address: "", gstNumber: "" });
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!form.name.trim()) return;
-    onSave({ ...form, email: form.email || null, address: form.address || null, gstNumber: form.gstNumber || null });
+    if (!form.name.trim()) { toast.error("Supplier name is required"); return; }
+    onSave(form);
   };
-
-  const fields = [
-    { name: "name",          label: "Company Name *", placeholder: "AgroBridge Wholesalers", full: true },
-    { name: "contactPerson", label: "Contact Person", placeholder: "Mahesh Kumar" },
-    { name: "phone",         label: "Phone",          placeholder: "9811122334" },
-    { name: "email",         label: "Email",          placeholder: "mahesh@company.com" },
-    { name: "address",       label: "Address",        placeholder: "Industrial Area, Bengaluru", full: true },
-    { name: "gstNumber",     label: "GST Number",     placeholder: "29AAABM4321H1Z4" },
-    { name: "paymentTerms",  label: "Payment Terms",  placeholder: "Net 30" },
-  ];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
         <h2 className="text-lg font-semibold mb-5">Add Supplier</h2>
-        <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
-          {fields.map(f => (
-            <div key={f.name} className={f.full ? "col-span-2" : ""}>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {[
+            { name: "name",          label: "Supplier Name *",   type: "text",   placeholder: "Global Traders" },
+            { name: "contactPerson", label: "Contact Person",    type: "text",   placeholder: "Suresh Gupta" },
+            { name: "phone",         label: "Phone",             type: "tel",    placeholder: "9876543210" },
+            { name: "email",         label: "Email",             type: "email",  placeholder: "contact@global.com" },
+            { name: "address",       label: "Address",           type: "text",   placeholder: "Mumbai, Maharashtra" },
+            { name: "gstNumber",     label: "GST Number",        type: "text",   placeholder: "27AADCG1234M1Z5" },
+          ].map(f => (
+            <div key={f.name}>
               <label className="block text-sm font-medium text-gray-700 mb-1">{f.label}</label>
-              <input className="input" placeholder={f.placeholder} value={form[f.name]}
-                onChange={e => setForm(v => ({ ...v, [f.name]: e.target.value }))} />
+              <input
+                className="input"
+                type={f.type}
+                placeholder={f.placeholder}
+                value={form[f.name]}
+                onChange={e => setForm(v => ({ ...v, [f.name]: e.target.value }))}
+              />
             </div>
           ))}
-          <div className="col-span-2 flex justify-end gap-3 pt-2">
-            <button type="button" className="btn-outline" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn-primary">Add Supplier</button>
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary">Add Supplier</button>
           </div>
         </form>
       </div>
@@ -51,74 +54,119 @@ export default function Suppliers() {
   const [showModal, setShowModal] = useState(false);
   const qc = useQueryClient();
 
-  const { data: suppliers = [], isLoading } = useQuery({
-    queryKey: ["suppliers", search],
-    queryFn: async() => {
-      const response = await apiClient.getSuppliers(search ? { search } : {});
-      return response.data || response.suppliers || response || [];
-    }
+  const { data: res, isLoading } = useQuery({ 
+    queryKey: ["suppliers"], 
+    queryFn: apiClient.getSuppliers 
   });
+
+  const suppliers = Array.isArray(res) ? res : (res?.data || []);
 
   const createMutation = useMutation({
     mutationFn: apiClient.createSupplier,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["suppliers"] }); setShowModal(false); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["suppliers"] });
+      setShowModal(false);
+      toast.success("Supplier added successfully");
+    },
   });
+
   const deleteMutation = useMutation({
     mutationFn: apiClient.deleteSupplier,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["suppliers"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["suppliers"] });
+      toast.success("Supplier removed");
+    },
   });
+
+  const filtered = suppliers.filter(s => 
+    s.name.toLowerCase().includes(search.toLowerCase()) ||
+    s.contactPerson?.toLowerCase().includes(search.toLowerCase()) ||
+    s.gstNumber?.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div className="space-y-6">
       {showModal && <SupplierModal onClose={() => setShowModal(false)} onSave={createMutation.mutate} />}
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Suppliers</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage your supplier relationships</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Suppliers</h1>
+          <p className="text-sm text-slate-500 mt-1 font-medium">Manage supplier profiles and payment details</p>
         </div>
-        <button className="btn-primary" onClick={() => setShowModal(true)}>
+        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
           <Plus className="w-4 h-4" /> Add Supplier
         </button>
       </div>
 
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-        <input className="input pl-9" placeholder="Search suppliers…" value={search} onChange={e => setSearch(e.target.value)} />
+      {/* Search Bar */}
+      <div className="relative">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+        <input 
+          type="text" 
+          placeholder="Search suppliers..." 
+          className="input pl-11 bg-white border-slate-200"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
       </div>
 
-      {isLoading ? (
-        <p className="text-center py-10 text-gray-400">Loading suppliers…</p>
-      ) : suppliers.length === 0 ? (
-        <div className="card flex flex-col items-center py-16 gap-3">
-          <Truck className="w-12 h-12 text-gray-200" />
-          <p className="text-gray-400">No suppliers found.</p>
-        </div>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {suppliers.map(s => (
-            <div key={s.id} className="card p-5 hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate(`/suppliers/${s.id}`)}>
-              <div className="flex items-start justify-between mb-3">
-                <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-sm shrink-0">
-                  {s.name.charAt(0)}
+      {/* Supplier Cards */}
+      <div className="space-y-3">
+        {isLoading ? (
+          <div className="py-20 text-center text-slate-400 font-medium animate-pulse">Loading suppliers...</div>
+        ) : filtered.length === 0 ? (
+          <div className="card p-12 text-center text-slate-400 font-medium">
+             <Building2 className="w-12 h-12 mx-auto mb-3 opacity-20" />
+             No suppliers found.
+          </div>
+        ) : (
+          filtered.map((s) => (
+            <div key={s.id} className="card p-5 hover:border-blue-200 transition-all group">
+              <div className="flex flex-col md:flex-row md:items-center gap-6">
+                {/* Initial Circle */}
+                <div className="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 font-bold text-lg shrink-0 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
+                  {s.name.charAt(0).toUpperCase()}
                 </div>
-                <div className="flex gap-1">
-                  <button className="btn-ghost p-1.5" onClick={e => { e.stopPropagation(); navigate(`/suppliers/${s.id}`); }}><Eye className="w-4 h-4" /></button>
-                  <button className="btn-danger p-1.5" onClick={e => { e.stopPropagation(); if (confirm(`Delete "${s.name}"?`)) deleteMutation.mutate(s.id); }}><Trash2 className="w-4 h-4" /></button>
+
+                {/* Details */}
+                <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-lg">{s.name}</h3>
+                    <div className="flex items-center gap-4 mt-1 text-xs font-medium text-slate-500">
+                      <span className="flex items-center gap-1"><User className="w-3 h-3" /> {s.contactPerson || "N/A"}</span>
+                      <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> {s.phone || "N/A"}</span>
+                    </div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">GST: {s.gstNumber || "Not Provided"}</p>
+                  </div>
+                  
+                  <div className="md:text-right flex flex-col md:items-end justify-center">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Purchased</p>
+                    <p className="text-xl font-black text-slate-900 mt-1">{formatINR(s.totalPurchased || 0)}</p>
+                  </div>
                 </div>
-              </div>
-              <h3 className="font-semibold text-gray-900">{s.name}</h3>
-              {s.contactPerson && <p className="text-sm text-gray-500">{s.contactPerson}</p>}
-              <p className="text-sm text-gray-500">{s.phone}</p>
-              {s.email && <p className="text-xs text-gray-400 mt-1">{s.email}</p>}
-              <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
-                {s.gstNumber && <span className="text-xs text-gray-400">{s.gstNumber}</span>}
-                {s.paymentTerms && <span className="badge badge-blue">{s.paymentTerms}</span>}
+
+                {/* Actions */}
+                <div className="flex items-center gap-2 border-t md:border-t-0 pt-4 md:pt-0 border-slate-50">
+                  <button 
+                    className="p-2.5 rounded-xl hover:bg-slate-50 text-slate-400 hover:text-blue-600 transition-all"
+                    onClick={() => navigate(`/suppliers/${s.id}`)}
+                    title="View Details"
+                  >
+                    <Eye className="w-5 h-5" />
+                  </button>
+                  <button 
+                    className="btn btn-danger p-2.5"
+                    onClick={() => { if(confirm("Remove this supplier?")) deleteMutation.mutate(s.id); }}
+                    title="Delete Supplier"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
             </div>
-          ))}
-        </div>
-      )}
+          ))
+        )}
+      </div>
     </div>
   );
 }

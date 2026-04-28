@@ -1,10 +1,10 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Link, useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Eye, EyeOff, User, Mail, Phone, Lock, ArrowRight, Loader2, Check, X } from "lucide-react";
+import { Eye, EyeOff, ArrowRight, Loader2, Send, ShieldCheck, Zap, BarChart3, User, Mail, Phone, Lock } from "lucide-react";
 import { registerUser, clearError } from "../redux/slices/authSlice";
 
 const registerSchema = z.object({
@@ -19,169 +19,171 @@ const registerSchema = z.object({
   path: ["confirmPassword"],
 });
 
-function PasswordStrength({ password }) {
-  const strength = useMemo(() => {
-    if (!password) return { score: 0, label: "", color: "" };
-    let score = 0;
-    if (password.length >= 6) score++;
-    if (password.length >= 10) score++;
-    if (/[A-Z]/.test(password)) score++;
-    if (/[0-9]/.test(password)) score++;
-    if (/[^A-Za-z0-9]/.test(password)) score++;
-    const levels = [
-      { label: "", color: "" },
-      { label: "Weak", color: "bg-red-500" },
-      { label: "Fair", color: "bg-orange-500" },
-      { label: "Good", color: "bg-yellow-500" },
-      { label: "Strong", color: "bg-green-500" },
-      { label: "Very Strong", color: "bg-emerald-500" },
-    ];
-    return { score, ...levels[score] };
-  }, [password]);
-
-  if (!password) return null;
-  return (
-    <div className="mt-2">
-      <div className="flex gap-1 mb-1">
-        {[1, 2, 3, 4, 5].map((i) => (
-          <div key={i} className={`h-1 flex-1 rounded-full transition-all duration-300 ${i <= strength.score ? strength.color : "bg-white/10"}`} />
-        ))}
-      </div>
-      <p className={`text-xs ${strength.score >= 4 ? "text-green-400/80" : strength.score >= 2 ? "text-yellow-400/80" : "text-red-400/80"}`}>{strength.label}</p>
-    </div>
-  );
-}
-
 export default function Register() {
   const dispatch = useDispatch();
   const { loading, error } = useSelector((s) => s.auth);
   const [, navigate] = useLocation();
   const [showPw, setShowPw] = useState(false);
-  const [showConfirmPw, setShowConfirmPw] = useState(false);
-  const { register, handleSubmit, watch, formState: { errors } } = useForm({
+  const { register, handleSubmit, formState: { errors } } = useForm({
     resolver: zodResolver(registerSchema),
     defaultValues: { firstName: "", lastName: "", email: "", phone: "", password: "", confirmPassword: "" },
   });
-  const watchPassword = watch("password");
-  const watchConfirm = watch("confirmPassword");
 
   const onSubmit = (data) => {
     dispatch(clearError());
     const { confirmPassword, ...payload } = data;
     dispatch(registerUser(payload)).unwrap().then(() => {
-      // Redirect to login page after successful registration
       navigate("/login?registered=true");
-    }).catch(() => {
-      // Error is handled by Redux state
-    });
+    }).catch(() => {});
   };
 
-  const inputCls = (err) => `w-full pl-11 pr-4 py-3 rounded-xl bg-white/[0.06] border ${err ? "border-red-400/50" : "border-white/[0.1]"} text-white placeholder-white/25 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-all`;
-
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 relative overflow-hidden py-12">
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: "1s" }} />
-      </div>
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:64px_64px]" />
+    <div className="min-h-screen bg-[#F0F2F5] flex items-center justify-center p-4 md:p-8 font-sans">
+      {/* Main Container */}
+      <div className="w-full max-w-[1100px] bg-[#6D28D9] rounded-[40px] shadow-2xl overflow-hidden flex flex-col md:flex-row relative min-h-[700px]">
+        
+        {/* Decorative Shapes */}
+        <div className="absolute top-10 right-[30%] text-purple-300 opacity-50"><Zap size={24} /></div>
+        <div className="absolute bottom-10 right-10 text-orange-400 opacity-60"><div className="w-4 h-4 rounded-full border-2 border-orange-400" /></div>
 
-      <div className="relative w-full max-w-lg mx-4">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 shadow-lg shadow-blue-500/25 mb-4">
-            <span className="text-white font-bold text-xl">VB</span>
+        {/* Left Side: Content & Hero */}
+        <div className="w-full md:w-[50%] p-8 md:p-12 flex flex-col relative overflow-hidden">
+          {/* Logo */}
+          <div className="flex items-center gap-2 mb-2">
+            <div className="bg-white p-1.5 rounded-lg shadow-md">
+              <BarChart3 className="text-[#6D28D9] w-6 h-6" />
+            </div>
+            <h2 className="text-white text-3xl font-extrabold tracking-tight">VyaparBook</h2>
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Create your account</h1>
-          <p className="text-blue-200/60 text-sm mt-1">Get started with VyaparBook in seconds</p>
+          <p className="text-purple-100 text-sm mb-8 font-medium opacity-80">Join us to manage all Your Logistic needs</p>
+
+          {/* Hero Image Container */}
+          <div className="relative mt-auto flex justify-center items-end h-full max-h-[450px]">
+            <img 
+              src="/images/login-hero.png" 
+              alt="Professional using laptop" 
+              className="w-full h-full object-contain object-bottom transform scale-110 translate-y-4"
+            />
+            
+            {/* Floating Info Cards */}
+            <div className="absolute top-[10%] left-[-5%] bg-white rounded-xl p-3 shadow-lg flex items-center gap-3 animate-pulse shadow-purple-900/20">
+              <div className="bg-purple-100 p-2 rounded-lg text-[#6D28D9]"><Zap size={18} /></div>
+              <div className="pr-2">
+                <p className="text-[10px] text-gray-400 font-bold uppercase leading-tight">Fast</p>
+                <p className="text-xs text-gray-900 font-extrabold leading-tight">Setup</p>
+              </div>
+            </div>
+
+            <div className="absolute bottom-[20%] left-[5%] bg-white rounded-xl p-3 shadow-lg flex items-center gap-3 shadow-purple-900/20">
+              <div className="bg-blue-50 p-2 rounded-lg text-blue-500"><ShieldCheck size={18} /></div>
+              <div className="pr-2">
+                <p className="text-[10px] text-gray-400 font-bold uppercase leading-tight">Secure</p>
+                <p className="text-xs text-gray-900 font-extrabold leading-tight">Storage</p>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="bg-white/[0.07] backdrop-blur-2xl border border-white/[0.1] rounded-2xl p-8 shadow-2xl shadow-black/20">
-          {error && (
-            <div className="mb-6 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-sm">{error}</div>
-          )}
+        {/* Right Side: Register Form */}
+        <div className="w-full md:w-[50%] bg-transparent p-4 md:p-8 flex items-center justify-center relative">
+          <div className="bg-white w-full rounded-[48px] p-8 md:p-10 shadow-xl flex flex-col overflow-y-auto max-h-[90vh]">
+            <h3 className="text-[#4B2A85] text-3xl font-extrabold mb-1">Create Account</h3>
+            <p className="text-purple-400 text-sm mb-6 font-semibold">Join the VyaparBook ecosystem</p>
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-            {/* First & Last Name */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="reg-first" className="block text-sm font-medium text-blue-100/70 mb-2">First Name</label>
-                <div className="relative">
-                  <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-                  <input id="reg-first" type="text" placeholder="John" {...register("firstName")} className={inputCls(errors.firstName)} />
+            {error && (
+              <div className="mb-4 px-4 py-2 bg-red-50 border border-red-100 text-red-500 text-xs rounded-lg font-medium">{error}</div>
+            )}
+
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[#4B2A85] text-xs font-bold mb-1.5 ml-1 uppercase tracking-wider">First Name</label>
+                  <input 
+                    type="text" 
+                    placeholder="John"
+                    {...register("firstName")}
+                    className={`w-full px-5 py-2.5 rounded-2xl bg-gray-50 border ${errors.firstName ? "border-red-400" : "border-gray-100"} text-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 transition-all font-medium`}
+                  />
                 </div>
-                {errors.firstName && <p className="mt-1.5 text-xs text-red-400/80">{errors.firstName.message}</p>}
-              </div>
-              <div>
-                <label htmlFor="reg-last" className="block text-sm font-medium text-blue-100/70 mb-2">Last Name</label>
-                <div className="relative">
-                  <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-                  <input id="reg-last" type="text" placeholder="Doe" {...register("lastName")} className={inputCls(errors.lastName)} />
+                <div>
+                  <label className="block text-[#4B2A85] text-xs font-bold mb-1.5 ml-1 uppercase tracking-wider">Last Name</label>
+                  <input 
+                    type="text" 
+                    placeholder="Doe"
+                    {...register("lastName")}
+                    className={`w-full px-5 py-2.5 rounded-2xl bg-gray-50 border ${errors.lastName ? "border-red-400" : "border-gray-100"} text-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 transition-all font-medium`}
+                  />
                 </div>
-                {errors.lastName && <p className="mt-1.5 text-xs text-red-400/80">{errors.lastName.message}</p>}
               </div>
-            </div>
 
-            {/* Email */}
-            <div>
-              <label htmlFor="reg-email" className="block text-sm font-medium text-blue-100/70 mb-2">Email</label>
-              <div className="relative">
-                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-                <input id="reg-email" type="email" autoComplete="email" placeholder="you@email.com" {...register("email")} className={inputCls(errors.email)} />
+              <div>
+                <label className="block text-[#4B2A85] text-xs font-bold mb-1.5 ml-1 uppercase tracking-wider">Email</label>
+                <input 
+                  type="email" 
+                  placeholder="john@example.com"
+                  {...register("email")}
+                  className={`w-full px-5 py-2.5 rounded-2xl bg-gray-50 border ${errors.email ? "border-red-400" : "border-gray-100"} text-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 transition-all font-medium`}
+                />
               </div>
-              {errors.email && <p className="mt-1.5 text-xs text-red-400/80">{errors.email.message}</p>}
-            </div>
 
-            {/* Phone */}
-            <div>
-              <label htmlFor="reg-phone" className="block text-sm font-medium text-blue-100/70 mb-2">Phone Number</label>
-              <div className="relative">
-                <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-                <input id="reg-phone" type="tel" autoComplete="tel" placeholder="+91 98765 43210" {...register("phone")} className={inputCls(errors.phone)} />
+              <div>
+                <label className="block text-[#4B2A85] text-xs font-bold mb-1.5 ml-1 uppercase tracking-wider">Phone</label>
+                <input 
+                  type="tel" 
+                  placeholder="+91 98765 43210"
+                  {...register("phone")}
+                  className={`w-full px-5 py-2.5 rounded-2xl bg-gray-50 border ${errors.phone ? "border-red-400" : "border-gray-100"} text-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 transition-all font-medium`}
+                />
               </div>
-              {errors.phone && <p className="mt-1.5 text-xs text-red-400/80">{errors.phone.message}</p>}
-            </div>
 
-            {/* Password */}
-            <div>
-              <label htmlFor="reg-password" className="block text-sm font-medium text-blue-100/70 mb-2">Password</label>
-              <div className="relative">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-                <input id="reg-password" type={showPw ? "text" : "password"} autoComplete="new-password" placeholder="Min 6 characters" {...register("password")} className={`w-full pl-11 pr-12 py-3 rounded-xl bg-white/[0.06] border ${errors.password ? "border-red-400/50" : "border-white/[0.1]"} text-white placeholder-white/25 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-all`} />
-                <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60 transition-colors" tabIndex={-1}>
-                  {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              <div>
+                <label className="block text-[#4B2A85] text-xs font-bold mb-1.5 ml-1 uppercase tracking-wider">Password</label>
+                <div className="relative">
+                  <input 
+                    type={showPw ? "text" : "password"} 
+                    placeholder="••••••••"
+                    {...register("password")}
+                    className={`w-full px-5 py-2.5 rounded-2xl bg-gray-50 border ${errors.password ? "border-red-400" : "border-gray-100"} text-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 transition-all font-medium`}
+                  />
+                  <button 
+                    type="button" 
+                    onClick={() => setShowPw(!showPw)} 
+                    className="absolute right-5 top-1/2 -translate-y-1/2 text-purple-300 hover:text-purple-500 transition-colors"
+                  >
+                    {showPw ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[#4B2A85] text-xs font-bold mb-1.5 ml-1 uppercase tracking-wider">Confirm Password</label>
+                <input 
+                  type="password" 
+                  placeholder="••••••••"
+                  {...register("confirmPassword")}
+                  className={`w-full px-5 py-2.5 rounded-2xl bg-gray-50 border ${errors.confirmPassword ? "border-red-400" : "border-gray-100"} text-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 transition-all font-medium`}
+                />
+              </div>
+
+              <div className="pt-4 flex flex-col gap-4">
+                <button 
+                  type="submit" 
+                  disabled={loading}
+                  className="bg-[#6D28D9] hover:bg-[#5B21B6] text-white w-full py-3.5 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all shadow-lg shadow-purple-200 disabled:opacity-70"
+                >
+                  {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Create Account <ArrowRight size={18} /></>}
                 </button>
+                <div className="text-center">
+                  <p className="text-xs text-gray-400 font-bold tracking-tight">
+                    Already have an account? <Link href="/login"><a className="text-[#6D28D9] font-extrabold hover:underline">Sign In</a></Link>
+                  </p>
+                </div>
               </div>
-              {errors.password && <p className="mt-1.5 text-xs text-red-400/80">{errors.password.message}</p>}
-              <PasswordStrength password={watchPassword} />
-            </div>
-
-            {/* Confirm Password */}
-            <div>
-              <label htmlFor="reg-confirm" className="block text-sm font-medium text-blue-100/70 mb-2">Retype Password</label>
-              <div className="relative">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-                <input id="reg-confirm" type={showConfirmPw ? "text" : "password"} autoComplete="new-password" placeholder="Retype your password" {...register("confirmPassword")} className={`w-full pl-11 pr-12 py-3 rounded-xl bg-white/[0.06] border ${errors.confirmPassword ? "border-red-400/50" : "border-white/[0.1]"} text-white placeholder-white/25 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-all`} />
-                <button type="button" onClick={() => setShowConfirmPw(!showConfirmPw)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60 transition-colors" tabIndex={-1}>
-                  {showConfirmPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-              {errors.confirmPassword && <p className="mt-1.5 text-xs text-red-400/80">{errors.confirmPassword.message}</p>}
-              {watchConfirm && !errors.confirmPassword && watchPassword === watchConfirm && (
-                <p className="mt-1.5 text-xs text-green-400/80 flex items-center gap-1"><Check className="w-3 h-3" /> Passwords match</p>
-              )}
-            </div>
-
-            <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm font-semibold hover:from-blue-500 hover:to-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-blue-600/20">
-              {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating account...</> : <><span>Create Account</span><ArrowRight className="w-4 h-4" /></>}
-            </button>
-          </form>
+            </form>
+          </div>
         </div>
-
-        <p className="text-center text-sm text-blue-200/50 mt-6">
-          Already have an account?{" "}
-          <Link href="/login"><a className="text-blue-400 hover:text-blue-300 font-medium transition-colors">Sign in</a></Link>
-        </p>
       </div>
     </div>
   );
 }
+

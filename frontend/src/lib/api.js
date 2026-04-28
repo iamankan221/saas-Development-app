@@ -174,9 +174,9 @@ export const apiClient = {
   getBillByCode:             (code) => api.get(`/bills/code/${code}`).then(r => r.data),
 
   // Analytics
-  getSalesAnalytics:         () => api.get("/analytics/sales").then(r => r.data),
-  getProfitLossAnalytics:    () => api.get("/analytics/profit-loss").then(r => r.data),
-  getTopSellingItems:        () => api.get("/analytics/top-items").then(r => r.data),
+  getSalesAnalytics:         (params) => api.get("/analytics/sales", { params }).then(r => r.data),
+  getProfitLossAnalytics:    (params) => api.get("/analytics/profit-loss", { params }).then(r => r.data),
+  getTopSellingItems:        (params) => api.get("/analytics/top-items", { params }).then(r => r.data),
 
   // Settings
   getSettings:               () => api.get("/settings").then(r => r.data),

@@ -17,6 +17,7 @@ import billRoutes from "./routes/billRoutes.js";
 import inventoryRoutes from "./routes/inventoryRoutes.js";
 import supplierRoutes from "./routes/supplierRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
+import analyticsRoutes from "./routes/analyticsRoutes.js";
 
 const app = express();
 
@@ -53,6 +54,9 @@ app.use("/api/inventory", inventoryRoutes);
 
 // Suppliers Routes
 app.use("/api/suppliers", supplierRoutes);
+
+// Analytics Routes
+app.use("/api/analytics", analyticsRoutes);
 
 // ============================================================================
 // ERROR HANDLING

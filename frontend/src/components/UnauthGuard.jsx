@@ -3,6 +3,7 @@ import { useSelector, useDispatch } from "react-redux";
 import { Redirect } from "wouter";
 import { fetchCurrentUser } from "../redux/slices/authSlice";
 import { getAccessToken } from "../lib/api";
+import { UniqueLoader } from "./UniqueLoader";
 
 /**
  * UnauthGuard — protects public-only routes (login, register).
@@ -34,14 +35,7 @@ export function UnauthGuard({ children }) {
   }, [dispatch, isAuthenticated, user]);
 
   if (checking || loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 border-4 border-blue-400/30 border-t-blue-400 rounded-full animate-spin" />
-          <p className="text-sm text-blue-200/70 font-medium">Loading...</p>
-        </div>
-      </div>
-    );
+    return <UniqueLoader message="Syncing workspace..." />;
   }
 
   if (isAuthenticated) {

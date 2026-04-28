@@ -9,7 +9,7 @@ export const billController = {
   async getAll(req, res) {
     try {
       const page = parseInt(req.query.page) || 1;
-      const limit = parseInt(req.query.limit) || 10;
+      const limit = parseInt(req.query.limit) || 100;
       const result = await billService.findAll(page, limit, req.query);
       res.json(result);
     } catch (error) {

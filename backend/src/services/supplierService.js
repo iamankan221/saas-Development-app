@@ -58,9 +58,13 @@ export const supplierService = {
         phone: data.phone,
         email: data.email,
         address: data.address,
-        gstNumber: data.gstNumber,
-        panNumber: data.panNumber,
+        gstNumber: data.gstNumber || null,
+        panNumber: data.panNumber || null,
         paymentTerms: data.paymentTerms,
+        upiId: data.upiId,
+        accountNumber: data.accountNumber,
+        ifscCode: data.ifscCode,
+        bankName: data.bankName,
       },
     });
     return supplier;
@@ -68,21 +72,34 @@ export const supplierService = {
 
   // Update supplier
   async update(id, data) {
-    const supplier = await prisma.supplier.update({
-      where: { id: parseInt(id) },
-      data: {
-        name: data.name,
-        contactPerson: data.contactPerson,
-        phone: data.phone,
-        email: data.email,
-        address: data.address,
-        gstNumber: data.gstNumber,
-        panNumber: data.panNumber,
-        paymentTerms: data.paymentTerms,
-        status: data.status,
-      },
-    });
-    return supplier;
+    try {
+      const updateData = {};
+      const fields = [
+        "name", "contactPerson", "phone", "email", "address", 
+        "gstNumber", "panNumber", "paymentTerms", "status",
+        "upiId", "accountNumber", "ifscCode", "bankName"
+      ];
+
+      fields.forEach(f => {
+        if (data[f] !== undefined) {
+          // Special handling for unique fields: convert empty string to null
+          if ((f === "gstNumber" || f === "panNumber") && data[f] === "") {
+            updateData[f] = null;
+          } else {
+            updateData[f] = data[f];
+          }
+        }
+      });
+
+      const supplier = await prisma.supplier.update({
+        where: { id: parseInt(id) },
+        data: updateData,
+      });
+      return supplier;
+    } catch (error) {
+      console.error(`Error updating supplier ${id}:`, error);
+      throw error;
+    }
   },
 
   // Delete supplier

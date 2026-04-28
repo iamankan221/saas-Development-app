@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { apiClient, formatINR } from "@/lib/api";
-import { ArrowLeft, Plus, Trash2, UserPlus, RotateCcw, X, Hash, Loader2, Search, ChevronDown } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, UserPlus, RotateCcw, X, Hash, Loader2, Search, ChevronDown, Check } from "lucide-react";
 import { toast } from "@/lib/toast";
 
 // ============================================================================
@@ -48,7 +48,7 @@ function SearchableItemSelect({ inventory, value, onChange }) {
           className="input text-sm flex items-center justify-between gap-1 cursor-pointer"
           onClick={() => { setOpen(true); setSearch(""); }}
         >
-          <span className="truncate">{selected.name} ({selected.currentQuantity} {selected.unit})</span>
+          <span className="truncate">{selected.name} ({selected.unitValue || 1} {selected.unit})</span>
           <button
             type="button"
             className="shrink-0 p-0.5 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-colors"
@@ -89,7 +89,7 @@ function SearchableItemSelect({ inventory, value, onChange }) {
                 }`}
                 onClick={() => handleSelect(i)}
               >
-                <span className="truncate font-medium">{i.name}</span>
+                <span className="truncate font-medium">{i.name} ({i.unitValue || 1} {i.unit})</span>
                 <span className="shrink-0 ml-2 text-xs text-gray-400">
                   Stock: {i.currentQuantity} {i.unit}
                 </span>
@@ -178,16 +178,29 @@ function QuickAddCustomerModal({ onClose, onAdd }) {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [selectedId, setSelectedId] = useState(null); // Track if we picked an existing record
   const debouncedPhone = useDebounce(form.phone.replace(/\D/g, ""), 300);
   const phoneRef = useRef(null);
 
   // Fetch suggestions when phone changes
   useEffect(() => {
-    if (debouncedPhone.length >= 3) {
+    const rawPhone = debouncedPhone;
+    if (rawPhone.length >= 1) {
       setLoadingSuggestions(true);
-      apiClient.searchCustomersByPhone(debouncedPhone)
+      apiClient.searchCustomersByPhone(rawPhone)
         .then((results) => {
           setSuggestions(results);
+          
+          // Auto-select if perfect 10-digit match
+          if (rawPhone.length === 10) {
+            const exactMatch = results.find(c => c.phone?.replace(/\D/g, "") === rawPhone);
+            if (exactMatch) {
+              selectExistingCustomer(exactMatch);
+              setShowSuggestions(false);
+              return;
+            }
+          }
+          
           setShowSuggestions(results.length > 0);
         })
         .catch(() => setSuggestions([]))
@@ -199,8 +212,19 @@ function QuickAddCustomerModal({ onClose, onAdd }) {
   }, [debouncedPhone]);
 
   const selectExistingCustomer = (customer) => {
+    const isWalkIn = customer.name?.toLowerCase().includes("walk-in");
+    setForm(prev => ({
+      ...prev,
+      // Only overwrite name if current is empty or a walk-in
+      name: (prev.name.trim() && !prev.name.toLowerCase().includes("walk-in")) 
+            ? prev.name 
+            : (isWalkIn ? "" : (customer.name || "")),
+      phone: customer.phone || prev.phone,
+      email: customer.email || prev.email,
+      gstNumber: customer.gstNumber || prev.gstNumber,
+    }));
+    setSelectedId(customer.id);
     setShowSuggestions(false);
-    onAdd({ customer, billCode, isNew: false });
   };
 
   const validate = () => {
@@ -216,16 +240,16 @@ function QuickAddCustomerModal({ onClose, onAdd }) {
 
     const customerName = form.name.trim() || `Walk-in #${billCode}`;
 
-    // Don't create via API — just pass local data
     onAdd({
       customer: {
+        id: selectedId,
         name: customerName,
         phone: form.phone.trim() || null,
         email: form.email.trim() || null,
         gstNumber: form.gstNumber.trim() || null,
       },
       billCode,
-      isNew: true,
+      isNew: !selectedId,
     });
   };
 
@@ -272,7 +296,11 @@ function QuickAddCustomerModal({ onClose, onAdd }) {
                   type="tel"
                   placeholder="9876543210"
                   value={form.phone}
-                  onChange={e => { setForm(v => ({ ...v, phone: e.target.value })); setShowSuggestions(true); }}
+                  onChange={e => { 
+                    setForm(v => ({ ...v, phone: e.target.value })); 
+                    setShowSuggestions(true);
+                    setSelectedId(null); // Reset selection if typing manually
+                  }}
                   onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
                   autoComplete="off"
                 />
@@ -282,31 +310,43 @@ function QuickAddCustomerModal({ onClose, onAdd }) {
                   </div>
                 )}
               </div>
+              
+              {/* Focus dim overlay for the rest of the form */}
+              {showSuggestions && suggestions.length > 0 && (
+                <div className="fixed inset-0 z-40 bg-white/5 backdrop-blur-[1px] pointer-events-none transition-all duration-300" />
+              )}
+
               {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
 
               {/* Autocomplete dropdown */}
               {showSuggestions && suggestions.length > 0 && (
-                <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
-                  <div className="px-3 py-2 bg-gray-50 border-b">
-                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Existing Customers</p>
+                <div className="absolute left-0 right-0 z-50 mt-2 bg-white/95 backdrop-blur-md border border-blue-100 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.15)] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                  <div className="px-4 py-2.5 bg-blue-50/50 border-b border-blue-100/50">
+                    <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Match Found</p>
                   </div>
-                  {suggestions.map(c => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-blue-50 transition-colors text-left"
-                      onClick={() => selectExistingCustomer(c)}
-                    >
-                      <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs shrink-0">
-                        {c.name?.charAt(0)?.toUpperCase() || "?"}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">{c.name}</p>
-                        <p className="text-xs text-gray-500">{c.phone}</p>
-                      </div>
-                      <span className="text-[10px] font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">Select</span>
-                    </button>
-                  ))}
+                  <div className="max-h-60 overflow-y-auto custom-scrollbar">
+                    {suggestions.map(c => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        className="w-full flex items-center gap-4 px-4 py-3.5 hover:bg-blue-600 group transition-all text-left border-b border-gray-50 last:border-none"
+                        onClick={() => selectExistingCustomer(c)}
+                      >
+                        <div className="w-10 h-10 rounded-full bg-blue-100 group-hover:bg-blue-500 flex items-center justify-center text-blue-600 group-hover:text-white font-bold text-sm shrink-0 transition-colors shadow-sm">
+                          {c.name?.charAt(0)?.toUpperCase() || "?"}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          {c.name && !c.name.toLowerCase().includes("walk-in") && (
+                            <p className="text-xs font-semibold text-gray-400 group-hover:text-blue-100 transition-colors uppercase tracking-tight">{c.name}</p>
+                          )}
+                          <p className="text-lg font-bold text-gray-900 group-hover:text-white transition-colors">{c.phone}</p>
+                        </div>
+                        <div className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Check className="w-5 h-5 text-white" />
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -332,7 +372,7 @@ function QuickAddCustomerModal({ onClose, onAdd }) {
             </div>
 
             <div className="flex justify-end gap-3 pt-2">
-              <button type="button" className="btn-outline" onClick={onClose}>Cancel</button>
+              <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
               <button
                 type="submit"
                 className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 transition-colors shadow-sm"
@@ -395,7 +435,7 @@ function ReturnBillModal({ onClose, onReturn }) {
             <p className="text-xs text-gray-400 mt-1">Enter the 6-character code from the original bill</p>
           </div>
           <div className="flex justify-end gap-3 pt-1">
-            <button type="button" className="btn-outline" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
             <button
               type="submit"
               disabled={loading}
@@ -494,6 +534,7 @@ export default function NewBill() {
   // Bill form state
   const [status, setStatus] = useState("unpaid");
   const [paidAmount, setPaidAmount] = useState("");
+  const [billDate, setBillDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [dueDate, setDueDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState("");
   const [billDiscount, setBillDiscount] = useState(0);
@@ -524,14 +565,35 @@ export default function NewBill() {
   // Item handlers
   const handleItemChange = (idx, field, value) => {
     const updated = [...items];
-    updated[idx] = { ...updated[idx], [field]: value };
+    let finalValue = value;
+
+    if (field === "quantity") {
+      const invItemId = updated[idx].inventoryItemId;
+      if (invItemId) {
+        const invItem = inventory.find(i => i.id === +invItemId);
+        if (invItem) {
+          const maxQty = Math.floor(invItem.currentQuantity / (invItem.unitValue || 1));
+          if (Number(value) > maxQty) {
+            finalValue = maxQty;
+            toast.error(`Max allowed quantity is ${maxQty} based on current stock`);
+          }
+        }
+      }
+    }
+
+    updated[idx] = { ...updated[idx], [field]: finalValue };
+
     if (field === "inventoryItemId") {
       const inv = inventory.find(i => i.id === +value);
       if (inv) {
         updated[idx].unitPrice = Number(inv.sellingPrice) || 0;
         updated[idx].taxRate = Number(inv.taxRate) || 0;
-        updated[idx].itemName = inv.name || "";
-        updated[idx].quantity = 1;
+        updated[idx].itemName = inv.name ? `${inv.name} (${inv.unitValue || 1} ${inv.unit})` : "";
+        
+        // Initial quantity setting, bounded by maxQty
+        const maxQty = Math.floor(inv.currentQuantity / (inv.unitValue || 1));
+        updated[idx].quantity = maxQty > 0 ? 1 : 0;
+        
         updated[idx].discount = 0;
         updated[idx].discountType = "percent";
       } else {
@@ -628,6 +690,22 @@ export default function NewBill() {
     // Filter out blank item rows (no product selected)
     const filledItems = items.filter(i => i.inventoryItemId);
     
+    if (filledItems.length === 0) {
+      toast.error("Please select at least one item");
+      return;
+    }
+
+    const totalQty = filledItems.reduce((sum, i) => sum + (Number(i.quantity) || 0), 0);
+    if (totalQty <= 0) {
+      toast.error("Total quantity must be greater than 0");
+      return;
+    }
+
+    if (total <= 0) {
+      toast.error("Total bill amount must be greater than ₹0");
+      return;
+    }
+    
     // Ensure we have a billCode to send to the backend
     const finalBillCode = billCode || generateRandomBillCode();
 
@@ -664,18 +742,23 @@ export default function NewBill() {
         payload.paidAmount = pAmount;
       }
     }
-
-    if (isNewCustomer) {
-      // Send newCustomer object — backend creates customer in same transaction
+      
+    // Customer data
+    if (selectedCustomer) {
+      // Always send current details for potential upsert
       payload.newCustomer = {
         name: selectedCustomer.name,
         phone: selectedCustomer.phone,
         email: selectedCustomer.email,
         gstNumber: selectedCustomer.gstNumber,
       };
+      // If it's an existing customer, also send the ID
+      if (selectedCustomer.id) {
+        payload.customerId = selectedCustomer.id;
+      }
     } else {
-      // Existing customer
-      payload.customerId = selectedCustomer.id;
+      toast.error("Please select a customer");
+      return;
     }
 
     createMutation.mutate(payload);
@@ -689,7 +772,7 @@ export default function NewBill() {
 
       {/* Page header */}
       <div className="flex items-center gap-3">
-        <button className="btn-ghost p-2" onClick={() => navigate("/bills")}><ArrowLeft className="w-4 h-4" /></button>
+        <button className="btn btn-ghost p-2" onClick={() => navigate("/bills")}><ArrowLeft className="w-4 h-4" /></button>
         <div>
           <h1 className="text-2xl font-bold text-gray-900">New Bill</h1>
           <p className="text-sm text-gray-500">Bill #{nextNumber?.billNumber || "…"}</p>
@@ -708,7 +791,7 @@ export default function NewBill() {
                   <button
                     type="button"
                     onClick={() => setShowQuickAdd(true)}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 transition-colors shadow-sm"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm"
                   >
                     <UserPlus className="w-4 h-4" /> New
                   </button>
@@ -751,11 +834,15 @@ export default function NewBill() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {status === "paid" || status === "quotation" ? "Current Date" : "Due Date"}
-                </label>
-                <input className="input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Bill Date</label>
+                <input className="input" type="date" value={billDate} onChange={e => setBillDate(e.target.value)} />
               </div>
+              {(status === "unpaid" || status === "partial") && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
+                  <input className="input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+                </div>
+              )}
             </div>
             {status === "partial" && (
               <div>
@@ -797,7 +884,11 @@ export default function NewBill() {
 
           {/* Item Rows */}
           <div className="space-y-2">
-            {items.map((item, idx) => (
+            {items.map((item, idx) => {
+              const invItem = inventory.find(i => i.id === +item.inventoryItemId);
+              const maxQty = invItem ? Math.floor(invItem.currentQuantity / (invItem.unitValue || 1)) : undefined;
+
+              return (
               <div
                 key={idx}
                 className="grid items-center gap-3 bg-white border border-gray-200 rounded-xl px-3 py-2.5"
@@ -811,13 +902,19 @@ export default function NewBill() {
                 />
 
                 {/* Qty */}
-                <input
-                  className="input text-sm text-center"
-                  type="number"
-                  min="0"
-                  value={item.quantity}
-                  onChange={e => handleItemChange(idx, "quantity", e.target.value)}
-                />
+                <div className="relative">
+                  <input
+                    className="input text-sm text-center w-full"
+                    type="number"
+                    min="0"
+                    max={maxQty}
+                    value={item.quantity}
+                    onChange={e => handleItemChange(idx, "quantity", e.target.value)}
+                  />
+                  {maxQty !== undefined && item.quantity >= maxQty && (
+                     <p className="absolute -bottom-4 left-0 w-full text-center text-[9px] font-bold text-blue-500 uppercase">Max {maxQty}</p>
+                  )}
+                </div>
 
                 {/* Price */}
                 <input
@@ -867,7 +964,7 @@ export default function NewBill() {
                   {items.length > 1 ? (
                     <button
                       type="button"
-                      className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      className="p-1.5 rounded-lg text-red-500 hover:text-red-700 hover:bg-red-50 transition-colors"
                       onClick={() => removeItem(idx)}
                       title="Remove item"
                     >
@@ -878,10 +975,11 @@ export default function NewBill() {
                   )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
 
-          <button type="button" className="btn-outline gap-2 text-sm" onClick={() => setItems(v => [...v, emptyItem()])}>
+          <button type="button" className="btn btn-outline gap-2 text-sm" onClick={() => setItems(v => [...v, emptyItem()])}>
             <Plus className="w-4 h-4" /> Add Item
           </button>
         </div>
@@ -905,7 +1003,7 @@ export default function NewBill() {
               </div>
 
               {/* Line Discount */}
-              <div className="flex justify-between text-orange-600">
+              <div className="flex justify-between text-blue-600">
                 <span>Line Discount</span>
                 <span>- {formatINR(lineDiscount)}</span>
               </div>
@@ -938,19 +1036,19 @@ export default function NewBill() {
                     <option value="amount">₹</option>
                   </select>
                 </div>
-                <span className="text-orange-600 shrink-0">- {formatINR(billDiscountAmount)}</span>
+                <span className="text-blue-600 shrink-0">- {formatINR(billDiscountAmount)}</span>
               </div>
 
               {/* Total */}
               <div className="flex justify-between font-bold text-lg text-gray-900 border-t pt-2.5 mt-1">
                 <span>Total</span>
-                <span className="text-orange-600">{formatINR(total)}</span>
+                <span className="text-blue-600">{formatINR(total)}</span>
               </div>
 
               {/* Create Bill Button */}
               <button
                 type="submit"
-                className="w-full mt-2 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-500 hover:to-orange-500 disabled:opacity-50 transition-all shadow-sm"
+                className="w-full mt-2 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 transition-all shadow-sm"
                 disabled={createMutation.isPending}
               >
                 {createMutation.isPending ? "Creating…" : "Create Bill"}
@@ -970,7 +1068,7 @@ export default function NewBill() {
         </div>
 
         <div className="flex justify-end gap-3">
-          <button type="button" className="btn-outline" onClick={() => navigate("/bills")}>Cancel</button>
+          <button type="button" className="btn btn-outline" onClick={() => navigate("/bills")}>Cancel</button>
         </div>
       </form>
     </div>

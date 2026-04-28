@@ -10,6 +10,7 @@ function AddItemModal({ onClose, onSave }) {
     purchasePrice: 0, sellingPrice: 0, currentQuantity: 0,
     totalQuantity: 0, lowStockThreshold: 10, taxRate: 18,
     hsnCode: "", expiryDate: "", supplierId: null,
+    unitValue: 1.0,
   });
 
   const handleSubmit = (e) => {
@@ -20,6 +21,7 @@ function AddItemModal({ onClose, onSave }) {
       purchasePrice: +form.purchasePrice, sellingPrice: +form.sellingPrice,
       currentQuantity: +form.currentQuantity, totalQuantity: +form.totalQuantity,
       lowStockThreshold: +form.lowStockThreshold, taxRate: +form.taxRate,
+      unitValue: +form.unitValue || 1.0,
       sku: form.sku || null, category: form.category || null,
       location: form.location || null, hsnCode: form.hsnCode || null,
       expiryDate: form.expiryDate || null,
@@ -38,6 +40,7 @@ function AddItemModal({ onClose, onSave }) {
     { name: "totalQuantity",    label: "Total Qty",           type: "number", placeholder: "0" },
     { name: "lowStockThreshold",label: "Low Stock Threshold", type: "number", placeholder: "10" },
     { name: "taxRate",          label: "GST Rate (%)",        type: "number", placeholder: "18" },
+    { name: "unitValue",        label: "Unit Value (SKU Qty) *", type: "number", placeholder: "1.0" },
     { name: "hsnCode",          label: "HSN Code",            type: "text",   placeholder: "8528720" },
     { name: "expiryDate",       label: "Expiry Date",         type: "date" },
   ];
@@ -61,8 +64,8 @@ function AddItemModal({ onClose, onSave }) {
             </div>
           ))}
           <div className="col-span-2 flex justify-end gap-3 pt-2">
-            <button type="button" className="btn-outline" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn-primary">Add Item</button>
+            <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary">Add Item</button>
           </div>
         </form>
       </div>
@@ -75,25 +78,35 @@ export default function Inventory() {
   const [search, setSearch] = useState("");
   const [filterLow, setFilterLow] = useState(false);
   const [filterExpiring, setFilterExpiring] = useState(false);
+  const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
   const qc = useQueryClient();
 
-  const { data: items = [], isLoading } = useQuery({
-    queryKey: ["inventory", search, filterLow, filterExpiring],
+  const { data: itemsRes, isLoading } = useQuery({
+    queryKey: ["inventory", search, filterLow, filterExpiring, page],
     queryFn: async () => {
-      const response = await apiClient.getInventory({ search: search || undefined, lowStock: filterLow || undefined, expiringSoon: filterExpiring || undefined });
-      return response.data || response.inventory || response || [];
+      const response = await apiClient.getInventory({ 
+        search: search || undefined, 
+        lowStock: filterLow || undefined, 
+        expiringSoon: filterExpiring || undefined,
+        page,
+        limit: 20
+      });
+      return response;
     }
   });
-  const { data: summary } = useQuery({ queryKey: ["inventory-summary"], queryFn: apiClient.getInventorySummary });
+
+  const items = itemsRes?.data || [];
+  const pagination = itemsRes?.pagination || { page: 1, pages: 1 };
+  const summary = itemsRes?.summary;
 
   const createMutation = useMutation({
     mutationFn: apiClient.createInventoryItem,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["inventory"] }); qc.invalidateQueries({ queryKey: ["inventory-summary"] }); setShowModal(false); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["inventory"] }); setShowModal(false); },
   });
   const deleteMutation = useMutation({
     mutationFn: apiClient.deleteInventoryItem,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["inventory"] }); qc.invalidateQueries({ queryKey: ["inventory-summary"] }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["inventory"] }); },
   });
 
   const today = new Date().toISOString().split("T")[0];
@@ -109,7 +122,7 @@ export default function Inventory() {
           <h1 className="text-2xl font-bold text-gray-900">Inventory & Stock</h1>
           <p className="text-sm text-gray-500 mt-1">Manage product catalog and stock levels</p>
         </div>
-        <button className="btn-primary" onClick={() => setShowModal(true)}>
+        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
           <Plus className="w-4 h-4" /> Add Item
         </button>
       </div>
@@ -123,7 +136,7 @@ export default function Inventory() {
           { label: "Expiring Soon",  value: summary?.expiringSoonCount ?? "—",       warn: (summary?.expiringSoonCount ?? 0) > 0 },
         ].map(c => (
           <div key={c.label} className={`card p-4 ${c.warn ? "border-orange-200" : ""}`}>
-            <p className="text-xs text-gray-500">{c.label}</p>
+            <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">{c.label}</p>
             <p className={`text-xl font-bold mt-1 ${c.warn ? "text-orange-600" : "text-gray-900"}`}>{c.value}</p>
           </div>
         ))}
@@ -161,6 +174,7 @@ export default function Inventory() {
                 <th className="px-4 py-3 font-medium">Item</th>
                 <th className="px-4 py-3 font-medium">Category</th>
                 <th className="px-4 py-3 font-medium">Location</th>
+                <th className="px-4 py-3 font-medium text-right">Unit Value</th>
                 <th className="px-4 py-3 font-medium text-right">Stock</th>
                 <th className="px-4 py-3 font-medium text-right">Selling Price</th>
                 <th className="px-4 py-3 font-medium text-right">Stock Value</th>
@@ -180,6 +194,7 @@ export default function Inventory() {
                     </td>
                     <td className="px-4 py-3 text-gray-500">{item.category || "—"}</td>
                     <td className="px-4 py-3 text-gray-500">{item.location || "—"}</td>
+                    <td className="px-4 py-3 text-right text-gray-500 font-mono text-xs">{item.unitValue || 1}</td>
                     <td className="px-4 py-3 text-right">
                       <span className={`font-semibold ${isLow ? "text-orange-600" : "text-gray-900"}`}>
                         {item.currentQuantity} {item.unit}
@@ -198,8 +213,8 @@ export default function Inventory() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-1 justify-end">
-                        <button className="btn-ghost p-1.5" onClick={e => { e.stopPropagation(); navigate(`/inventory/${item.id}`); }}><Eye className="w-4 h-4" /></button>
-                        <button className="btn-danger p-1.5" onClick={e => { e.stopPropagation(); if (confirm(`Delete "${item.name}"?`)) deleteMutation.mutate(item.id); }}><Trash2 className="w-4 h-4" /></button>
+                        <button className="btn btn-ghost p-1.5" onClick={e => { e.stopPropagation(); navigate(`/inventory/${item.id}`); }}><Eye className="w-4 h-4" /></button>
+                        <button className="btn btn-danger p-1.5" onClick={e => { e.stopPropagation(); if (confirm(`Delete "${item.name}"?`)) deleteMutation.mutate(item.id); }}><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </td>
                   </tr>
@@ -207,6 +222,31 @@ export default function Inventory() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Pagination Controls */}
+      {!isLoading && pagination.pages > 1 && (
+        <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-6">
+          <p className="text-sm text-slate-500 font-medium">
+            Showing <span className="text-slate-900">Page {pagination.page}</span> of <span className="text-slate-900">{pagination.pages}</span>
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => { setPage(p => Math.max(1, p - 1)); window.scrollTo(0, 0); }}
+              disabled={page === 1}
+              className="btn bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none px-6"
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => { setPage(p => Math.min(pagination.pages, p + 1)); window.scrollTo(0, 0); }}
+              disabled={page === pagination.pages}
+              className="btn bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none px-6"
+            >
+              Next
+            </button>
+          </div>
         </div>
       )}
     </div>

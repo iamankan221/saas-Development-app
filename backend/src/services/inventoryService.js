@@ -23,7 +23,7 @@ export const inventoryService = {
       where.status = filters.status;
     }
 
-    const [items, total] = await Promise.all([
+    const [items, total, summaryAggs] = await Promise.all([
       prisma.inventoryItem.findMany({
         where,
         skip,
@@ -32,10 +32,48 @@ export const inventoryService = {
         orderBy: { createdAt: "desc" },
       }),
       prisma.inventoryItem.count({ where }),
+      prisma.inventoryItem.findMany({
+        where,
+        select: {
+          currentQuantity: true,
+          sellingPrice: true,
+          lowStockThreshold: true,
+          expiryDate: true,
+        }
+      })
     ]);
+
+    // Compute summary stats from ALL matching items
+    let totalStockValue = 0n;
+    let lowStockCount = 0;
+    let expiringSoonCount = 0;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const thirtyDays = new Date(today);
+    thirtyDays.setDate(thirtyDays.getDate() + 30);
+
+    for (const item of summaryAggs) {
+      totalStockValue += BigInt(item.currentQuantity) * item.sellingPrice;
+      if (item.currentQuantity <= item.lowStockThreshold && item.currentQuantity > 0) {
+        lowStockCount++;
+      }
+      if (item.expiryDate) {
+        const expDate = new Date(item.expiryDate);
+        if (expDate >= today && expDate <= thirtyDays) {
+          expiringSoonCount++;
+        }
+      }
+    }
 
     return {
       data: items,
+      summary: {
+        totalItems: total,
+        totalStockValue: Number(totalStockValue),
+        lowStockCount,
+        expiringSoonCount,
+      },
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     };
   },
@@ -53,23 +91,30 @@ export const inventoryService = {
 
   // Create inventory item
   async create(data) {
+    const createData = {
+      name: data.name,
+      sku: data.sku || null,
+      category: data.category || null,
+      location: data.location || null,
+      unit: data.unit,
+      purchasePrice: BigInt(Math.round(Number(data.purchasePrice) || 0)),
+      sellingPrice: BigInt(Math.round(Number(data.sellingPrice) || 0)),
+      currentQuantity: parseFloat(data.currentQuantity) || 0,
+      totalQuantity: parseFloat(data.totalQuantity) || 0,
+      lowStockThreshold: parseFloat(data.lowStockThreshold) || 0,
+      taxRate: parseInt(data.taxRate) || 0,
+      hsnCode: data.hsnCode || null,
+      expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
+      unitValue: parseFloat(data.unitValue) || 1.0,
+    };
+
+    // Only link supplier if provided
+    if (data.supplierId) {
+      createData.supplierId = parseInt(data.supplierId);
+    }
+
     const item = await prisma.inventoryItem.create({
-      data: {
-        name: data.name,
-        sku: data.sku,
-        category: data.category,
-        location: data.location,
-        unit: data.unit,
-        purchasePrice: data.purchasePrice,
-        sellingPrice: data.sellingPrice,
-        currentQuantity: data.currentQuantity,
-        totalQuantity: data.totalQuantity,
-        lowStockThreshold: data.lowStockThreshold,
-        taxRate: data.taxRate,
-        hsnCode: data.hsnCode,
-        expiryDate: data.expiryDate,
-        supplierId: data.supplierId,
-      },
+      data: createData,
       include: { supplier: true },
     });
     return item;
@@ -81,10 +126,20 @@ export const inventoryService = {
       where: { id: parseInt(id) },
       data: {
         name: data.name,
+        sku: data.sku,
+        category: data.category,
         location: data.location,
-        purchasePrice: data.purchasePrice,
-        sellingPrice: data.sellingPrice,
-        lowStockThreshold: data.lowStockThreshold,
+        unit: data.unit,
+        purchasePrice: BigInt(Math.round(Number(data.purchasePrice) || 0)),
+        sellingPrice: BigInt(Math.round(Number(data.sellingPrice) || 0)),
+        currentQuantity: parseFloat(data.currentQuantity) || 0,
+        totalQuantity: parseFloat(data.totalQuantity) || 0,
+        lowStockThreshold: parseFloat(data.lowStockThreshold) || 0,
+        taxRate: parseInt(data.taxRate) || 0,
+        hsnCode: data.hsnCode || null,
+        expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
+        unitValue: parseFloat(data.unitValue) || 1.0,
+        supplierId: data.supplierId ? parseInt(data.supplierId) : null,
         status: data.status,
       },
       include: { supplier: true },

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { apiClient, formatINR, formatDate } from "@/lib/api";
-import { ArrowLeft, FileText, Share2, Download, MessageCircle, Mail, Smartphone, FileDown, Loader2, Printer } from "lucide-react";
+import { ArrowLeft, FileText, Share2, Download, MessageCircle, Mail, Smartphone, FileDown, Loader2, Printer, Edit2 } from "lucide-react";
 import { generateInvoicePDF, generateInvoicePDFBlob } from "@/lib/invoicePDF";
 
 // ============================================================================
@@ -257,13 +257,16 @@ export default function CustomerDetail() {
   return (
     <div className="space-y-6 max-w-4xl">
       <div className="flex items-center gap-3">
-        <button className="btn-ghost p-2" onClick={() => navigate("/customers")}>
+        <button className="btn btn-ghost p-2" onClick={() => navigate("/customers")}>
           <ArrowLeft className="w-4 h-4" />
         </button>
-        <div>
+        <div className="flex-1">
           <h1 className="text-2xl font-bold text-gray-900">{customer.name}</h1>
           <p className="text-sm text-gray-500">{customer.phone} {customer.email ? `· ${customer.email}` : ""}</p>
         </div>
+        <button className="btn btn-outline gap-2" onClick={() => navigate(`/customers/${customer.id}/edit`)}>
+          <Edit2 className="w-4 h-4" /> Edit Profile
+        </button>
       </div>
 
       {/* Balance Cards */}
@@ -283,20 +286,27 @@ export default function CustomerDetail() {
       {/* Details */}
       <div className="card p-5">
         <h2 className="font-semibold text-gray-900 mb-4">Customer Details</h2>
-        <dl className="grid grid-cols-2 gap-4 text-sm">
+        <dl className="grid grid-cols-2 md:grid-cols-4 gap-6 text-sm">
           {[
-            { label: "Address", value: customer.address },
+            { label: "Email Address", value: customer.email },
             { label: "GST Number", value: customer.gstNumber },
             { label: "PAN Number", value: customer.panNumber },
             { label: "Credit Limit", value: customer.creditLimit ? formatINR(customer.creditLimit) : "Not set" },
-            { label: "Joined", value: formatDate(customer.createdAt) },
-          ].map(({ label, value }) => (
+            { label: "Last Purchase", value: customer.lastPurchaseDate ? formatDate(customer.lastPurchaseDate) : "No purchases" },
+            { label: "Total Visits", value: customer.billCount ? `${customer.billCount} Times` : "0 Times" },
+            { label: "Lifetime Profit", value: formatINR(customer.totalProfit || 0), color: "text-emerald-600 font-bold" },
+            { label: "Customer Joined", value: formatDate(customer.createdAt) },
+          ].map(({ label, value, color }) => (
             <div key={label}>
-              <dt className="text-gray-500 text-xs font-medium uppercase tracking-wide">{label}</dt>
-              <dd className="mt-0.5 font-medium text-gray-900">{value || "—"}</dd>
+              <dt className="text-gray-500 text-[10px] font-bold uppercase tracking-wider mb-0.5">{label}</dt>
+              <dd className={`font-semibold text-gray-900 ${color || ""}`}>{value || "—"}</dd>
             </div>
           ))}
         </dl>
+        <div className="mt-6 pt-6 border-t border-gray-100">
+          <dt className="text-gray-500 text-[10px] font-bold uppercase tracking-wider mb-1">Billing Address</dt>
+          <dd className="text-gray-900 font-medium">{customer.address || "No address provided"}</dd>
+        </div>
       </div>
 
       {/* Bills */}
@@ -328,6 +338,12 @@ export default function CustomerDetail() {
                         {b.billCode}
                       </span>
                     ) : "—"}
+                  </td>
+                  <td className="py-2.5 text-gray-900 font-medium">
+                    {b.customerName?.toLowerCase().includes("walk-in") 
+                      ? `Walk-in #${b.billCode || "N/A"}` 
+                      : (b.customerName || "Walk-in")
+                    }
                   </td>
                   <td className="py-2.5 text-gray-500">{formatDate(b.createdAt)}</td>
                   <td className="py-2.5">

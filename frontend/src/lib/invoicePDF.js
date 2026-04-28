@@ -52,8 +52,8 @@ function buildPDF(bill, options = {}) {
   let y = M;
 
   const C_ORANGE = [255, 90, 0];
-  const C_DARK = [31, 41, 55];
-  const C_GRAY = [107, 114, 128];
+  const C_DARK = [0, 0, 0];   // Changed to pure black for maximum contrast
+  const C_GRAY = [0, 0, 0];   // Changed to pure black for maximum contrast
   const C_WHITE = [255, 255, 255];
   const C_CREAM = [255, 248, 240];
   const C_GREEN = [16, 185, 129];
@@ -77,14 +77,15 @@ function buildPDF(bill, options = {}) {
   doc.text(co.name, M + pad, y + 14);
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
+  doc.setFontSize(9); // Increased from 8
   doc.text(co.address, M + pad, y + 20);
   doc.text(`${co.phone} - ${co.email}`, M + pad, y + 25);
   doc.text(`GSTIN: ${co.gst}`, M + pad, y + 30);
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(28);
-  doc.text("INVOICE", M + CW - pad, y + 20, { align: "right" });
+  const mainTitle = bill.status === "quotation" ? "QUOTATION" : "INVOICE";
+  doc.text(mainTitle, M + CW - pad, y + 20, { align: "right" });
 
   y += 40;
 
@@ -102,22 +103,63 @@ function buildPDF(bill, options = {}) {
   const drawInlineMeta = (label, value, xPos, yPos) => {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7);
-    setColor(C_ORANGE);
-    doc.text(label, xPos, yPos);
+    const labelW = doc.getTextWidth(label);
     
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8.5);
+    const valW = doc.getTextWidth(value);
+    const gap = 2;
+
+    setColor(C_ORANGE);
+    doc.setFontSize(7);
+    doc.text(label, xPos, yPos);
+    
     setColor(C_DARK);
-    // Add offset based on label length
-    const offset = doc.getTextWidth(label) + 2;
-    doc.text(value, xPos + offset, yPos);
+    doc.setFontSize(8.5);
+    doc.text(value, xPos + labelW + gap, yPos);
+    
+    return labelW + gap + valW; // Return total width of block
   };
 
   const metaY1 = y + 8;
-  drawInlineMeta("INVOICE NO.", bill.billNumber || "\u2014", M + pad, metaY1);
-  drawInlineMeta("INVOICE CODE", bill.billCode || "\u2014", M + pad + 40, metaY1);
-  drawInlineMeta("DATE", fmtDate(bill.createdAt), M + pad + 85, metaY1);
-  drawInlineMeta("DUE DATE", fmtDate(bill.dueDate), M + pad + 130, metaY1);
+  const isQuotation = bill.status === "quotation";
+  const hasDueDate = bill.status === "unpaid" || bill.status === "partial";
+  
+  const metaItems = [
+    { label: isQuotation ? "QUOTATION NO." : "INVOICE NO.", value: bill.billNumber || "\u2014" },
+    { label: isQuotation ? "QUOTATION CODE" : "INVOICE CODE", value: bill.billCode || "\u2014" },
+    { label: "DATE", value: fmtDate(bill.createdAt) }
+  ];
+  
+  if (hasDueDate) {
+    metaItems.push({ label: "DUE DATE", value: fmtDate(bill.dueDate) });
+  }
+
+  const leftEdge = M + pad;
+  const rightEdge = M + CW - pad;
+  const availableW = rightEdge - leftEdge;
+
+  // 1. Measure all blocks
+  const blockWidths = metaItems.map(item => {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    const lw = doc.getTextWidth(item.label);
+    doc.setFontSize(8.5);
+    const vw = doc.getTextWidth(item.value);
+    return lw + 2 + vw;
+  });
+
+  // 2. Calculate gap
+  const totalBlocksW = blockWidths.reduce((a, b) => a + b, 0);
+  const totalGapW = availableW - totalBlocksW;
+  const gapSize = totalGapW / (metaItems.length - 1);
+
+  // 3. Draw
+  let currentX = leftEdge;
+  metaItems.forEach((item, idx) => {
+    drawInlineMeta(item.label, item.value, currentX, metaY1);
+    currentX += blockWidths[idx] + gapSize;
+  });
 
   const metaY2 = y + 16;
   doc.setFont("helvetica", "bold");
@@ -161,7 +203,7 @@ function buildPDF(bill, options = {}) {
     doc.text(name, x, y + 9);
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
+    doc.setFontSize(8.5); // Increased from 8
     setColor(C_GRAY);
     let ly = y + 15;
     lines.forEach(l => {
@@ -338,7 +380,7 @@ function buildPDF(bill, options = {}) {
   doc.rect(M, footerY, CW, 10, "F");
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(7);
+  doc.setFontSize(7.5);
   setColor(C_GRAY);
   doc.text("Terms & Conditions:", M + pad, footerY + 8);
   doc.text("1. Payment is due within 30 days of invoice date.", M + pad, footerY + 12);

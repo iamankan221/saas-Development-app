@@ -48,7 +48,7 @@ export const billService = {
       where.customerId = parseInt(filters.customerId);
     }
 
-    const [bills, total] = await Promise.all([
+    const [bills, total, summaryAggs] = await Promise.all([
       prisma.bill.findMany({
         where,
         skip,
@@ -57,10 +57,37 @@ export const billService = {
         orderBy: { createdAt: "desc" },
       }),
       prisma.bill.count({ where }),
+      prisma.bill.groupBy({
+        by: ["status"],
+        where,
+        _sum: {
+          totalAmount: true,
+          paidAmount: true,
+        },
+      }),
     ]);
+
+    // Compute global financial stats from status groups
+    const summary = { total: 0, paid: 0, unpaid: 0, partial: 0 };
+    
+    for (const group of summaryAggs) {
+      const totalAmt = Number(group._sum.totalAmount || 0n);
+      const paidAmt = Number(group._sum.paidAmount || 0n);
+      
+      summary.total += totalAmt;
+      
+      if (group.status === "paid") {
+        summary.paid += totalAmt;
+      } else if (group.status === "unpaid") {
+        summary.unpaid += totalAmt;
+      } else if (group.status === "partial") {
+        summary.partial += paidAmt;
+      }
+    }
 
     return {
       data: bills,
+      summary,
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     };
   },
@@ -133,17 +160,43 @@ export const billService = {
       let customerId = data.customerId ? parseInt(data.customerId) : null;
       let customerName = data.customerName;
 
-      if (data.newCustomer && !customerId) {
-        const newCust = await tx.customer.create({
-          data: {
-            name: data.newCustomer.name || "Walk-in",
-            phone: data.newCustomer.phone || null,
-            email: data.newCustomer.email || null,
-            gstNumber: data.newCustomer.gstNumber || null,
-          },
-        });
-        customerId = newCust.id;
-        customerName = newCust.name;
+      if (data.newCustomer) {
+        let existingCust = null;
+        
+        // Priority 1: Use customerId if provided
+        if (customerId) {
+          existingCust = await tx.customer.findUnique({ where: { id: customerId } });
+        } 
+        // Priority 2: Try to find by phone if customerId wasn't found/provided
+        else if (data.newCustomer.phone) {
+          existingCust = await tx.customer.findUnique({ where: { phone: data.newCustomer.phone } });
+        }
+
+        if (existingCust) {
+          // Update existing customer details if provided
+          const updatedCust = await tx.customer.update({
+            where: { id: existingCust.id },
+            data: {
+              name: (data.newCustomer.name && !data.newCustomer.name.toLowerCase().includes("walk-in")) ? data.newCustomer.name : existingCust.name,
+              email: data.newCustomer.email || existingCust.email,
+              gstNumber: data.newCustomer.gstNumber || existingCust.gstNumber,
+            }
+          });
+          customerId = updatedCust.id;
+          customerName = updatedCust.name;
+        } else {
+          // Create truly new customer
+          const newCust = await tx.customer.create({
+            data: {
+              name: (data.newCustomer.name && !data.newCustomer.name.toLowerCase().includes("walk-in")) ? data.newCustomer.name : "Walk-in",
+              phone: data.newCustomer.phone || null,
+              email: data.newCustomer.email || null,
+              gstNumber: data.newCustomer.gstNumber || null,
+            },
+          });
+          customerId = newCust.id;
+          customerName = newCust.name;
+        }
       }
 
       // Look up customer name if not provided
@@ -175,7 +228,7 @@ export const billService = {
           dueDate: data.dueDate ? new Date(data.dueDate) : null,
           items: {
             create: itemsList.map(i => {
-              const qty = parseInt(i.quantity) || 0;
+              const qty = Number(i.quantity) || 0;
               const price = Number(i.unitPrice) || 0;
               const itemSubtotal = BigInt(Math.round(qty * price));
 
@@ -193,6 +246,35 @@ export const billService = {
         },
         include: { items: true },
       });
+
+      // Deduct stock for each item
+      for (const item of itemsList) {
+        if (!item.inventoryItemId) continue;
+        const invItem = await tx.inventoryItem.findUnique({
+          where: { id: parseInt(item.inventoryItemId) }
+        });
+        if (invItem) {
+          const qty = Number(item.quantity) || 0;
+          const multiplier = invItem.unitValue || 1.0;
+          const deduction = qty * multiplier;
+          
+          await tx.inventoryItem.update({
+            where: { id: invItem.id },
+            data: { currentQuantity: { decrement: deduction } }
+          });
+
+          await tx.stockMovement.create({
+            data: {
+              inventoryItemId: invItem.id,
+              type: "SALE",
+              quantity: deduction,
+              previousQuantity: invItem.currentQuantity,
+              newQuantity: invItem.currentQuantity - deduction,
+              reason: `Bill #${billNumber}`,
+            }
+          });
+        }
+      }
 
       return createdBill;
     });

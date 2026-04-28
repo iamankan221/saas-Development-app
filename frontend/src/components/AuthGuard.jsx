@@ -3,6 +3,7 @@ import { useSelector, useDispatch } from "react-redux";
 import { Redirect } from "wouter";
 import { fetchCurrentUser } from "../redux/slices/authSlice";
 import { getAccessToken } from "../lib/api";
+import { UniqueLoader } from "./UniqueLoader";
 
 /**
  * AuthGuard — protects routes that require authentication.
@@ -34,14 +35,7 @@ export function AuthGuard({ children }) {
   }, [dispatch, isAuthenticated, user]);
 
   if (checking || loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
-          <p className="text-sm text-gray-500 font-medium">Verifying session...</p>
-        </div>
-      </div>
-    );
+    return <UniqueLoader message="Verifying session..." />;
   }
 
   if (!isAuthenticated) {

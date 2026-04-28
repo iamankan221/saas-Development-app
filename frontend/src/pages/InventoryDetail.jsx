@@ -39,6 +39,7 @@ export default function InventoryDetail() {
     { name: "totalQuantity",    label: "Total Quantity",    type: "number" },
     { name: "lowStockThreshold",label: "Low Stock Threshold",type:"number" },
     { name: "taxRate",          label: "GST Rate (%)",      type: "number" },
+    { name: "unitValue",        label: "Unit Value (SKU Qty)", type: "number" },
     { name: "hsnCode",          label: "HSN Code",          type: "text" },
     { name: "expiryDate",       label: "Expiry Date",       type: "date" },
   ];
@@ -46,18 +47,18 @@ export default function InventoryDetail() {
   return (
     <div className="max-w-3xl space-y-5">
       <div className="flex items-center gap-3">
-        <button className="btn-ghost p-2" onClick={() => navigate("/inventory")}><ArrowLeft className="w-4 h-4" /></button>
+        <button className="btn btn-ghost p-2" onClick={() => navigate("/inventory")}><ArrowLeft className="w-4 h-4" /></button>
         <div className="flex-1">
           <h1 className="text-2xl font-bold text-gray-900">{item.name}</h1>
           <p className="text-sm text-gray-500">{item.category || "—"} · {item.location || "—"}</p>
         </div>
         {editing ? (
           <div className="flex gap-2">
-            <button className="btn-outline gap-2" onClick={() => { setForm(item); setEditing(false); }}><X className="w-4 h-4" /> Cancel</button>
-            <button className="btn-primary gap-2" onClick={() => updateMutation.mutate(form)} disabled={updateMutation.isPending}><Save className="w-4 h-4" /> Save</button>
+            <button className="btn btn-outline gap-2" onClick={() => { setForm(item); setEditing(false); }}><X className="w-4 h-4" /> Cancel</button>
+            <button className="btn btn-primary gap-2" onClick={() => updateMutation.mutate(form)} disabled={updateMutation.isPending}><Save className="w-4 h-4" /> Save</button>
           </div>
         ) : (
-          <button className="btn-outline gap-2" onClick={() => { setForm({...item}); setEditing(true); }}><Edit2 className="w-4 h-4" /> Edit</button>
+          <button className="btn btn-outline gap-2" onClick={() => { setForm({...item}); setEditing(true); }}><Edit2 className="w-4 h-4" /> Edit</button>
         )}
       </div>
 

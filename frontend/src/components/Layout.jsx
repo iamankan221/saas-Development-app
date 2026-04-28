@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useDispatch, useSelector } from "react-redux";
 import {
-  LayoutDashboard, Users, FileText, Package, Truck, BarChart3, Settings, Menu, X, LogOut
+  LayoutDashboard, Users, FileText, Package, Truck, BarChart3, Settings, Menu, X, LogOut, ChevronLeft, ChevronRight
 } from "lucide-react";
 import { logoutUser } from "../redux/slices/authSlice";
 
@@ -22,8 +22,12 @@ export function Layout({ children }) {
   const { user } = useSelector((s) => s.auth);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [hoverIndex, setHoverIndex] = useState(null);
 
   useEffect(() => setMobileOpen(false), [location]);
+
+  const activeIndex = NAV_ITEMS.findIndex((item) => item.href === location);
+  const displayIndex = hoverIndex !== null ? hoverIndex : (activeIndex !== -1 ? activeIndex : null);
 
   const handleLogout = () => {
     dispatch(logoutUser()).then(() => {
@@ -32,96 +36,87 @@ export function Layout({ children }) {
   };
 
   return (
-    <div className="min-h-screen flex bg-gray-50">
-      {/* Mobile backdrop */}
-      {mobileOpen && (
-        <div className="fixed inset-0 bg-black/40 z-30 md:hidden" onClick={() => setMobileOpen(false)} />
-      )}
-
+    <div className="min-h-screen flex bg-[#F8FAFC] font-sans">
       {/* Sidebar */}
       <aside className={`
         fixed md:sticky top-0 left-0 z-40 h-screen flex flex-col
-        bg-[hsl(222,20%,14%)] border-r border-[hsl(222,15%,20%)]
-        transition-all duration-300
-        ${collapsed ? "md:w-[72px]" : "md:w-64"}
+        bg-white border-r border-slate-200 transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]
+        ${collapsed ? "md:w-[90px]" : "md:w-64"}
         ${mobileOpen ? "translate-x-0 w-64" : "-translate-x-full md:translate-x-0"}
       `}>
-        {/* Logo */}
-        <div className="h-16 flex items-center justify-between px-4 border-b border-[hsl(222,15%,20%)] shrink-0">
-          {!collapsed && (
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-blue-500 flex items-center justify-center text-white font-bold text-sm shadow">
-                VB
-              </div>
-              <span className="font-bold text-lg text-white">VyaparBook</span>
-            </div>
-          )}
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            className="hidden md:flex p-1.5 rounded-lg text-gray-400 hover:bg-[hsl(222,15%,22%)] hover:text-white transition-colors ml-auto"
-          >
-            <Menu className="w-5 h-5" />
+        {/* Logo Section */}
+        <div className={`h-20 flex items-center shrink-0 border-b border-slate-50 transition-all duration-500 ${collapsed ? "px-4" : "px-6"}`}>
+          <div className="flex items-center gap-3 transition-all duration-500">
+            <div className={`rounded-lg bg-black flex items-center justify-center text-white font-black shadow-lg shadow-black/10 transition-all duration-500 ${collapsed ? "w-7 h-7 text-[10px]" : "w-8 h-8 text-xs"}`}>VB</div>
+            {!collapsed && <span className="font-bold text-xl text-slate-900 tracking-tight animate-pulse-fade">VyaparBook</span>}
+          </div>
+          <button onClick={() => setCollapsed(!collapsed)} className={`hidden md:flex ml-auto rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-900 transition-all duration-300 ${collapsed ? "p-1" : "p-2"}`}>
+            {collapsed ? (
+              <ChevronRight className="w-4 h-4 transition-all duration-500" />
+            ) : (
+              <ChevronLeft className="w-5 h-5 transition-all duration-500" />
+            )}
           </button>
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto">
-          {NAV_ITEMS.map(({ href, icon: Icon, label }) => {
-            const active = href === "/" ? location === "/" : location.startsWith(href);
-            return (
-              <Link key={href} href={href}>
-                <a className={`
-                  flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-                  ${active
-                    ? "bg-blue-600 text-white shadow-sm"
-                    : "text-gray-400 hover:bg-[hsl(222,15%,22%)] hover:text-white"
-                  }
-                  ${collapsed ? "justify-center" : ""}
-                `}>
-                  <Icon className="w-5 h-5 shrink-0" />
-                  {!collapsed && <span>{label}</span>}
-                </a>
-              </Link>
-            );
-          })}
-        </nav>
+        <div className="flex-1 py-4 px-3 relative" onMouseLeave={() => setHoverIndex(null)}>
+          <div className="relative">
+            {/* Sliding Indicator Pill - Precision Mouse Tracking */}
+            <div 
+              className={`absolute h-12 bg-[#0061FF] rounded-2xl transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] shadow-xl shadow-blue-600/20 ${collapsed ? "left-2 right-2" : "left-0 right-0"}`}
+              style={{ 
+                opacity: displayIndex !== null ? 1 : 0,
+                transform: `translateY(${(displayIndex || 0) * 48}px)`,
+                pointerEvents: 'none'
+              }}
+            />
 
-        {/* Logout section */}
-        <div className="border-t border-[hsl(222,15%,20%)] p-2 shrink-0">
-          {!collapsed && user && (
-            <div className="px-3 py-2 mb-1">
-              <p className="text-sm font-medium text-white truncate">{user.firstName} {user.lastName}</p>
-              <p className="text-xs text-gray-400 truncate">{user.email}</p>
-            </div>
-          )}
-          <button
-            onClick={handleLogout}
-            className={`
-              w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-              text-gray-400 hover:bg-red-500/10 hover:text-red-400
-              ${collapsed ? "justify-center" : ""}
-            `}
-          >
-            <LogOut className="w-5 h-5 shrink-0" />
-            {!collapsed && <span>Sign Out</span>}
-          </button>
+            <nav className="relative z-10">
+              {NAV_ITEMS.map((item, idx) => {
+                const Icon = item.icon;
+                const active = location === item.href;
+                const isHovered = hoverIndex === idx;
+                const shouldHighlight = isHovered || (active && hoverIndex === null);
+
+                return (
+                  <Link key={item.href} href={item.href}>
+                    <a 
+                      onMouseEnter={() => setHoverIndex(idx)}
+                      className={`flex items-center gap-3 h-12 rounded-2xl text-sm font-bold transition-all duration-500 ${collapsed ? "justify-center" : "px-4"} ${shouldHighlight ? "text-white" : "text-slate-500 hover:translate-x-1"}`}
+                    >
+                      <Icon className={`w-5 h-5 shrink-0 transition-transform duration-500 ${shouldHighlight ? "scale-110" : ""}`} />
+                      {!collapsed && <span className="animate-pulse-fade truncate">{item.label}</span>}
+                    </a>
+                  </Link>
+                );
+              })}
+            </nav>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 border-t border-slate-100">
+           {user && !collapsed && (
+             <div className="px-4 py-3 bg-[#F1F5F9] rounded-2xl mb-4">
+               <p className="text-xs font-bold text-slate-900 truncate tracking-tight">{user.firstName} {user.lastName}</p>
+               <p className="text-[10px] text-slate-500 truncate font-semibold">{user.email}</p>
+             </div>
+           )}
+           <button onClick={handleLogout} className={`flex items-center gap-3 py-2 text-slate-500 hover:text-red-600 w-full transition-colors font-bold text-sm ${collapsed ? "justify-center" : "px-4"}`}>
+             <LogOut className="w-5 h-5" />
+             {!collapsed && <span>Sign Out</span>}
+           </button>
         </div>
       </aside>
 
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Mobile header */}
-        <div className="md:hidden sticky top-0 z-20 flex items-center justify-between h-14 px-4 bg-white border-b border-gray-200">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-blue-500 flex items-center justify-center text-white font-bold text-xs">VB</div>
-            <span className="font-bold text-gray-900">VyaparBook</span>
-          </div>
-          <button onClick={() => setMobileOpen(!mobileOpen)} className="p-2 rounded-lg hover:bg-gray-100">
-            {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </button>
-        </div>
-
-        <main className="flex-1 p-4 md:p-6 overflow-auto">
+        <header className="h-16 bg-white border-b border-slate-100 px-6 flex items-center md:hidden">
+          <button onClick={() => setMobileOpen(true)} className="text-slate-500"><Menu className="w-6 h-6" /></button>
+          <span className="ml-4 font-bold text-lg">VyaparBook</span>
+        </header>
+        <main className="flex-1 p-6 overflow-auto">
           {children}
         </main>
       </div>
