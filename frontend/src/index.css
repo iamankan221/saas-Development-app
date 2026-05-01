@@ -2,10 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Global Reset for Focus/Active Artifacts */
+* {
+  -webkit-tap-highlight-color: transparent;
+  outline: none !important;
+}
+
+*:focus {
+  outline: none !important;
+}
+
 @keyframes mesh-pulse {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
+  0% { background-position: 0% 50%; opacity: 0.05; }
+  50% { background-position: 100% 50%; opacity: 0.15; }
+  100% { background-position: 0% 50%; opacity: 0.05; }
 }
 
 @keyframes pulse-fade {
@@ -13,14 +23,86 @@
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+/* Premium Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.2);
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.4);
+}
+
+/* Global Numeric Input Fixes */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type=number] {
+  -moz-appearance: textfield;
+}
+
+:root {
+  /* --- THEME PRESET: VIBRANT INDIGO (Default) --- */
+  --background: 210 40% 98%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+  --primary: 221 100% 50%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 210 40% 96.1%;
+  --secondary-foreground: 222 47% 11.2%;
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+  --accent: 210 40% 96.1%;
+  --accent-foreground: 222 47% 11.2%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --ring: 221.2 83.2% 53.3%;
+  --radius: 0.75rem;
+}
+
+.dark {
+  /* --- THEME PRESET: PREMIUM PITCH BLACK --- */
+  --background: 0 0% 0%;
+  --foreground: 0 0% 98%;
+  --card: 0 0% 4%;
+  --card-foreground: 0 0% 98%;
+  --popover: 0 0% 0%;
+  --popover-foreground: 0 0% 98%;
+  --primary: 199 89% 48%; /* Premium Cyan/Sky */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 10%;
+  --secondary-foreground: 0 0% 98%;
+  --muted: 0 0% 10%;
+  --muted-foreground: 0 0% 65%;
+  --accent: 0 0% 10%;
+  --accent-foreground: 0 0% 98%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 0 0% 12%;
+  --input: 0 0% 12%;
+  --ring: 199 89% 48%;
+}
+
 @layer base {
   body {
-    @apply text-slate-900;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
     font-family: 'Inter', sans-serif;
-    /* Ultra-subtle mesh background for premium feel */
-    background: linear-gradient(-45deg, #f8fafc, #f1f5f9, #eff6ff, #f8fafc);
-    background-size: 400% 400%;
-    animation: mesh-pulse 15s ease infinite;
+    transition: background-color 0.3s ease, color 0.3s ease;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
 
@@ -29,43 +111,68 @@
 }
 
 .card {
-  @apply bg-white rounded-2xl border border-slate-200/60 shadow-sm transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)];
+  @apply bg-card text-card-foreground rounded-2xl border border-border shadow-2xl transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)];
 }
 
 .card:hover {
-  @apply shadow-xl shadow-blue-600/5 -translate-y-1 border-blue-200/50;
+  @apply border-primary/30;
 }
 
-.liquid-ghost {
-  @apply relative transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)];
-}
-
-.liquid-ghost:hover {
-  @apply bg-blue-50/50 text-blue-600 shadow-sm border-blue-100;
-}
+/* Removed liquid-ghost to prevent artifacts */
 
 @layer components {
   .input {
-    @apply w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-600/5 focus:border-blue-600 transition-all duration-300;
+    @apply w-full px-4 py-2.5 bg-background border border-input rounded-xl outline-none focus:border-primary focus-visible:ring-4 focus-visible:ring-primary/5 transition-all duration-200 placeholder:text-muted-foreground font-medium;
   }
   
   .btn {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 active:scale-95 disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-black uppercase tracking-widest transition-all duration-200 disabled:opacity-50 outline-none focus-visible:ring-4 focus-visible:ring-primary/10;
   }
   
   .btn-primary {
-    @apply bg-[#0061FF] text-white shadow-lg shadow-blue-600/10 hover:bg-blue-700 hover:shadow-blue-600/30;
+    @apply bg-primary text-primary-foreground shadow-sm hover:opacity-90 border border-primary/50;
   }
   
   .btn-outline {
-    @apply border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 hover:border-slate-300;
+    @apply border border-border text-foreground bg-background hover:bg-accent hover:border-accent hover:shadow-md;
   }
 
   .btn-danger {
-    @apply text-red-600 hover:bg-red-50 hover:text-red-700;
+    @apply text-destructive hover:bg-destructive/10 border border-transparent hover:border-destructive/20;
   }
 
   .btn-ghost {
-    @apply text-slate-400 hover:bg-slate-50 hover:text-blue-600;
+    @apply text-muted-foreground hover:bg-accent hover:text-accent-foreground border border-transparent hover:border-border/50;
+  }
+}
+
+@layer utilities {
+  .mesh-background {
+    background-color: hsl(var(--background));
+    background-image: 
+      radial-gradient(at 0% 0%, hsl(var(--foreground) / 0.015) 0px, transparent 50%),
+      radial-gradient(at 50% 0%, hsl(var(--foreground) / 0.01) 0px, transparent 50%),
+      radial-gradient(at 100% 0%, hsl(var(--foreground) / 0.015) 0px, transparent 50%);
+    background-size: 100% 100%;
+    animation: mesh-pulse 10s ease infinite;
+  }
+
+  .glass {
+    @apply bg-card/60 backdrop-blur-xl border border-border/50;
+  }
+
+  .glass-primary {
+    @apply bg-primary/10 backdrop-blur-md border border-primary/20 text-primary;
+  }
+
+  .date-input-left {
+    position: relative;
+    padding-left: 28px !important;
+  }
+
+  .date-input-left::-webkit-calendar-picker-indicator {
+    position: absolute;
+    left: 8px;
+    cursor: pointer;
   }
 }

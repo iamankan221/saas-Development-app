@@ -1,0 +1,611 @@
+import { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
+import { apiClient, formatINR, formatDate } from "@/lib/api";
+import { Search, Plus, Trash2, Eye, Package, AlertTriangle, Clock, X, Calendar } from "lucide-react";
+
+const CATEGORIES = [
+  "Groceries", "Dairy", "Beverages", "Personal Care", "Household", "Electronics", "Hardware", "Others"
+];
+
+const UNITS = [
+  { short: "pcs", label: "Piece (pcs)" },
+  { short: "kg",  label: "Kilogram (kg)" },
+  { short: "g",   label: "Gram (g)" },
+  { short: "ltr", label: "Liter (ltr)" },
+  { short: "ml",  label: "Milliliter (ml)" },
+  { short: "box", label: "Box (box)" },
+  { short: "pkt", label: "Packet (pkt)" },
+  { short: "dz",  label: "Dozen (dz)" },
+];
+
+const TAX_OPTIONS = [
+  "NONE", "IGST 0%", "GST 0%", "IGST 0.25%", "GST 0.25%", "IGST 3%", "GST 3%", "IGST 5%", "GST 5%", 
+  "IGST 12%", "GST 12%", "IGST 18%", "GST 18%", "IGST 28%", "GST 28%", "IGST 40%", "GST 40%", "Exempt"
+];
+
+function AddItemModal({ onClose, onSave }) {
+  const { data: itemsRes } = useQuery({ queryKey: ["inventory-all"], queryFn: () => apiClient.getInventory({ limit: 1000 }) });
+  const existingItems = itemsRes?.data || [];
+
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [form, setForm] = useState({
+    sku: "", category: CATEGORIES[0], location: "", unit: UNITS[0].short,
+    purchasePrice: "", sellingPrice: "", currentQuantity: "",
+    totalQuantity: "", lowStockThreshold: "10", taxRate: "GST 18%",
+    hsnCode: "", expiryDate: "", supplierId: null,
+    unitValue: "",
+  });
+
+  const [nameSearch, setNameSearch] = useState("");
+  const [expiryText, setExpiryText] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const nameSuggestions = nameSearch.trim()
+    ? existingItems.filter(i => i.name.toLowerCase().includes(nameSearch.toLowerCase())).slice(0, 10)
+    : existingItems.slice(0, 10);
+
+  const handleDateInput = (val) => {
+    let clean = val.replace(/[^\d]/g, "");
+    if (clean.length > 8) clean = clean.slice(0, 8);
+    let formatted = clean;
+    if (clean.length > 2) formatted = clean.slice(0, 2) + "/" + clean.slice(2);
+    if (clean.length > 4) formatted = formatted.slice(0, 5) + "/" + formatted.slice(5);
+    
+    setExpiryText(formatted);
+
+    if (formatted.length === 10) {
+      const [d, m, y] = formatted.split("/");
+      setForm(v => ({ ...v, expiryDate: `${y}-${m}-${d}` }));
+    } else {
+      setForm(v => ({ ...v, expiryDate: "" }));
+    }
+  };
+
+  const handleSelectSuggestion = (item) => {
+    setSelectedItem(item);
+    setNameSearch(item.name);
+    setShowSuggestions(false);
+    
+    const expDate = item.expiryDate ? item.expiryDate.split('T')[0] : "";
+    if (expDate) {
+      const [y, m, d] = expDate.split("-");
+      setExpiryText(`${d}/${m}/${y}`);
+    } else {
+      setExpiryText("");
+    }
+
+    const taxLabel = item.taxType && item.taxRate != null 
+      ? (item.taxType === "NONE" ? "NONE" : item.taxType === "EXEMPT" ? "Exempt" : `${item.taxType} ${item.taxRate}%`)
+      : (item.taxRate != null ? `GST ${item.taxRate}%` : "NONE");
+
+    setForm({
+      sku: item.sku || "",
+      category: item.category || CATEGORIES[0],
+      location: item.location || "",
+      unit: item.unit || UNITS[0].short,
+      purchasePrice: Number(item.purchasePrice) || 0,
+      sellingPrice: Number(item.sellingPrice) || 0,
+      currentQuantity: 0,
+      totalQuantity: Number(item.currentQuantity) || 0,
+      lowStockThreshold: Number(item.lowStockThreshold) || 10,
+      taxRate: TAX_OPTIONS.includes(taxLabel) ? taxLabel : "GST 18%",
+      hsnCode: item.hsnCode || "",
+      expiryDate: expDate,
+      unitValue: Number(item.unitValue) || 1.0,
+    });
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!nameSearch.trim() || !form.unit.trim()) {
+      toast.error("Item Name and Unit are required");
+      return;
+    }
+    const taxParts = form.taxRate.split(" ");
+    const taxType = taxParts[0] === "Exempt" ? "EXEMPT" : taxParts[0];
+    const taxRate = taxParts[1] ? parseFloat(taxParts[1].replace("%", "")) : 0;
+
+    const payload = {
+      ...form,
+      name: nameSearch.trim(),
+      purchasePrice: +form.purchasePrice, sellingPrice: +form.sellingPrice,
+      currentQuantity: selectedItem ? +form.totalQuantity : +form.currentQuantity, 
+      totalQuantity: +form.totalQuantity,
+      lowStockThreshold: +form.lowStockThreshold, 
+      taxRate,
+      taxType,
+      unitValue: +form.unitValue || 1.0,
+      sku: form.sku || null, category: form.category || null,
+      location: form.location || null, hsnCode: form.hsnCode || null,
+      expiryDate: form.expiryDate || null,
+    };
+    if (selectedItem) payload.id = selectedItem.id;
+    onSave(payload);
+  };
+
+  const fields = [
+    { name: "sku",              label: "SKU",                 type: "text",   placeholder: "SKU-001" },
+    { name: "category",         label: "Category",            type: "select", options: CATEGORIES },
+    { name: "location",         label: "Storage Location",    type: "text",   placeholder: "Rack A-1" },
+    { name: "unit",             label: "Unit *",              type: "select", options: UNITS },
+    { name: "purchasePrice",    label: "Purchase Price (₹) *",type: "number", placeholder: "0" },
+    { name: "sellingPrice",     label: "Selling Price (₹) *", type: "number", placeholder: "0" },
+    { name: "currentQuantity",  label: "Quantity Add *",      type: "number", placeholder: "0" },
+    { name: "totalQuantity",    label: "Total Qty",           type: "number", placeholder: "0" },
+    { name: "lowStockThreshold",label: "Low Stock Threshold", type: "number", placeholder: "10" },
+    { name: "taxRate",          label: "Tax Rate",            type: "select", options: TAX_OPTIONS },
+    { name: "unitValue",        label: "Unit Value (SKU Qty) *", type: "number", placeholder: "1.0" },
+    { name: "hsnCode",          label: "HSN Code",            type: "text",   placeholder: "8528720" },
+    { name: "expiryDate",       label: "Expiry Date",         type: "date" },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
+        <h2 className="text-lg font-semibold mb-5">Add Inventory Item</h2>
+        <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
+          {/* Custom Name Field with Suggestions */}
+          <div className="col-span-2 relative">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Item Name *</label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                className="input pl-9 pr-8"
+                placeholder="Type item name..."
+                value={nameSearch}
+                onChange={e => { setNameSearch(e.target.value); setShowSuggestions(true); }}
+                onFocus={() => setShowSuggestions(true)}
+                autoComplete="off"
+              />
+              {nameSearch && (
+                <button
+                  type="button"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  onClick={() => { setNameSearch(""); setShowSuggestions(false); }}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            {showSuggestions && nameSuggestions.length > 0 && (
+              <div className="absolute z-20 w-full mt-2 bg-white/95 backdrop-blur-sm border border-gray-200 rounded-xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                <div className="px-3 py-1 bg-gray-50/80 border-b border-gray-100">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                    {nameSearch ? "Search Results" : "Top 10 Items"}
+                  </p>
+                </div>
+                <div className="max-h-60 overflow-y-auto custom-scrollbar">
+                  {nameSuggestions.map(item => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className="w-full text-left px-4 py-1.5 text-sm hover:bg-blue-600 hover:text-white transition-all flex justify-between items-center group"
+                      onClick={() => handleSelectSuggestion(item)}
+                    >
+                      <span className="font-semibold">{item.name}</span>
+                      <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 group-hover:bg-blue-500 group-hover:text-white transition-colors">
+                        {item.category}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {fields.map(f => (
+            <div key={f.name} className={f.full ? "col-span-2" : ""}>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{f.label}</label>
+              {f.type === "select" ? (
+                <select
+                  className="input"
+                  value={form[f.name]}
+                  onChange={e => {
+                    const val = e.target.value;
+                    if (f.name === "unit") {
+                      const isDecimalUnit = ["kg", "g", "ltr", "ml"].includes(val);
+                      setForm(v => {
+                        const next = { ...v, unit: val };
+                        if (!isDecimalUnit) {
+                          if (next.currentQuantity) next.currentQuantity = String(next.currentQuantity).split(".")[0];
+                          if (next.totalQuantity) next.totalQuantity = String(next.totalQuantity).split(".")[0];
+                          if (next.lowStockThreshold) next.lowStockThreshold = String(next.lowStockThreshold).split(".")[0];
+                        }
+                        return next;
+                      });
+                    } else {
+                      setForm(v => ({ ...v, [f.name]: val }));
+                    }
+                  }}
+                >
+                  {f.name === "category" || f.name === "taxRate" ? (
+                    f.options.map(opt => <option key={opt} value={opt}>{opt}</option>)
+                  ) : (
+                    f.options.map(opt => <option key={opt.short} value={opt.short}>{opt.label}</option>)
+                  )}
+                </select>
+              ) : (
+                f.name === "expiryDate" ? (
+                    <div className="relative flex items-center">
+                      <input
+                        className="input pr-10"
+                        placeholder="DD/MM/YYYY"
+                        value={expiryText}
+                        onChange={e => handleDateInput(e.target.value)}
+                        maxLength={10}
+                      />
+                      <div className="absolute right-3 flex items-center">
+                        <Calendar 
+                          className="w-4 h-4 text-gray-400 cursor-pointer hover:text-blue-500 transition-colors" 
+                          onClick={() => {
+                            const el = document.getElementById('addItem-expiry-picker');
+                            if (el?.showPicker) el.showPicker(); else el?.click();
+                          }}
+                        />
+                        <input 
+                          id="addItem-expiry-picker"
+                          type="date" 
+                          className="absolute opacity-0 w-0 h-0 pointer-events-none"
+                          value={form.expiryDate}
+                          onChange={e => {
+                            const val = e.target.value;
+                            if (val) {
+                              const [y, m, d] = val.split("-");
+                              setExpiryText(`${d}/${m}/${y}`);
+                              setForm(v => ({ ...v, expiryDate: val }));
+                            } else {
+                              setExpiryText("");
+                              setForm(v => ({ ...v, expiryDate: "" }));
+                            }
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <input
+                      className={`input transition-all duration-300 ${
+                        f.name === "sellingPrice" && form.sellingPrice > 0 && form.purchasePrice > 0
+                          ? Number(form.sellingPrice) > Number(form.purchasePrice)
+                            ? "text-emerald-600 bg-emerald-50 border-emerald-300 font-bold"
+                            : Number(form.sellingPrice) < Number(form.purchasePrice)
+                              ? "text-red-600 bg-red-50 border-red-300 font-bold"
+                              : ""
+                          : ""
+                      }`}
+                      type={f.type}
+                      placeholder={f.placeholder}
+                      value={form[f.name]}
+                      step={(() => {
+                        if (f.type !== "number") return undefined;
+                        const isDecimalUnit = ["kg", "g", "ltr", "ml"].includes(form.unit);
+                        if (f.name === "currentQuantity" || f.name === "totalQuantity" || f.name === "lowStockThreshold") {
+                          return isDecimalUnit ? "0.01" : "1";
+                        }
+                        return "0.01"; // Prices, GST, Unit Value
+                      })()}
+                      onChange={e => {
+                        let val = e.target.value;
+                        const isDecimalUnit = ["kg", "g", "ltr", "ml"].includes(form.unit);
+                        
+                        // Force integer if not a decimal unit
+                        if (!isDecimalUnit && (f.name === "currentQuantity" || f.name === "totalQuantity" || f.name === "lowStockThreshold")) {
+                          val = val.split(".")[0];
+                        }
+
+                        setForm(v => {
+                          const next = { ...v, [f.name]: val };
+                          if (f.name === "currentQuantity") {
+                            if (selectedItem) {
+                              next.totalQuantity = Number(selectedItem.currentQuantity || 0) + Number(val || 0);
+                            } else {
+                              next.totalQuantity = val;
+                            }
+                          }
+                          return next;
+                        });
+                      }}
+                    />
+                  )
+                )}
+              </div>
+            ))}
+          <div className="col-span-2 flex justify-end gap-3 pt-2">
+            <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary">Add Item</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+export default function Inventory() {
+  const [, navigate] = useLocation();
+  const [search, setSearch] = useState("");
+  const [filterLow, setFilterLow] = useState(false);
+  const [filterExpiring, setFilterExpiring] = useState(false);
+  const [page, setPage] = useState(1);
+  const [showModal, setShowModal] = useState(false);
+  const qc = useQueryClient();
+
+  // Reset page on filter change
+  useEffect(() => {
+    setPage(1);
+  }, [search, filterLow, filterExpiring]);
+
+  const { data: itemsRes, isLoading } = useQuery({
+    queryKey: ["inventory", search, filterLow, filterExpiring, page],
+    queryFn: async () => {
+      const response = await apiClient.getInventory({ 
+        search: search || undefined, 
+        lowStock: filterLow || undefined, 
+        expiringSoon: filterExpiring || undefined,
+        page,
+        limit: 10
+      });
+      return response;
+    }
+  });
+
+  const items = itemsRes?.data || [];
+  const pagination = itemsRes?.pagination || { page: 1, pages: 1 };
+  const summary = itemsRes?.summary;
+
+  const createMutation = useMutation({
+    mutationFn: apiClient.createInventoryItem,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["inventory"] }); setShowModal(false); },
+  });
+  const updateMutation = useMutation({
+    mutationFn: (data) => apiClient.updateInventoryItem(data.id, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["inventory"] }); setShowModal(false); },
+  });
+  const deleteMutation = useMutation({
+    mutationFn: apiClient.deleteInventoryItem,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["inventory"] }); },
+  });
+
+  const handleSave = (payload) => {
+    if (payload.id) {
+      updateMutation.mutate(payload);
+    } else {
+      createMutation.mutate(payload);
+    }
+  };
+
+  const today = new Date().toISOString().split("T")[0];
+  const limit = new Date(); limit.setDate(limit.getDate() + 30);
+  const expiryLimit = limit.toISOString().split("T")[0];
+
+  return (
+    <div className="space-y-6">
+      {showModal && <AddItemModal onClose={() => setShowModal(false)} onSave={handleSave} />}
+
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Inventory & Stock</h1>
+          <p className="text-sm text-gray-500 mt-1">Manage product catalog and stock levels</p>
+        </div>
+        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+          <Plus className="w-4 h-4" /> Add Item
+        </button>
+      </div>
+
+      {/* Summary */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { 
+            label: "Total Items",    
+            value: summary?.totalItems ?? "—",              
+            active: !filterLow && !filterExpiring,
+            onClick: () => { setFilterLow(false); setFilterExpiring(false); }
+          },
+          { 
+            label: "Stock Value",    
+            value: formatINR(summary?.totalStockValue),     
+            active: false,
+            onClick: () => { setFilterLow(false); setFilterExpiring(false); }
+          },
+          { 
+            label: "Low Stock",      
+            value: summary?.lowStockCount ?? "—",           
+            active: filterLow,
+            warn: (summary?.lowStockCount ?? 0) > 0,
+            onClick: () => { setFilterLow(!filterLow); setFilterExpiring(false); }
+          },
+          { 
+            label: "Expiring Soon",  
+            value: summary?.expiringSoonCount ?? "—",       
+            active: filterExpiring,
+            warn: (summary?.expiringSoonCount ?? 0) > 0,
+            onClick: () => { setFilterExpiring(!filterExpiring); setFilterLow(false); }
+          },
+        ].map(c => (
+          <div 
+            key={c.label} 
+            onClick={c.onClick}
+            className={`card p-4 cursor-pointer transition-all hover:shadow-md border-2 ${
+              c.active 
+                ? (c.warn ? "border-orange-500 bg-orange-50" : "border-blue-500 bg-blue-50") 
+                : (c.warn ? "border-orange-200 hover:border-orange-300" : "border-transparent hover:border-gray-200")
+            }`}
+          >
+            <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">{c.label}</p>
+            <p className={`text-xl font-bold mt-1 ${c.warn ? "text-orange-600" : "text-gray-900"}`}>{c.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-3 flex-wrap items-center">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input className="input pl-9" placeholder="Search items…" value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        {[
+          { 
+            label: "Low Stock", 
+            active: filterLow, 
+            toggle: () => { setFilterLow(!filterLow); }, 
+            activeClass: "bg-orange-100 border-orange-300 text-orange-700" 
+          },
+          { 
+            label: "Expiring Soon", 
+            active: filterExpiring, 
+            toggle: () => { setFilterExpiring(!filterExpiring); }, 
+            activeClass: "bg-yellow-100 border-yellow-300 text-yellow-700" 
+          },
+        ].map(f => (
+          <button key={f.label} onClick={f.toggle} className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${f.active ? f.activeClass : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Table */}
+      {isLoading ? (
+        <p className="text-center py-10 text-gray-400">Loading inventory…</p>
+      ) : items.length === 0 ? (
+        <div className="card flex flex-col items-center py-16 gap-3">
+          <Package className="w-12 h-12 text-gray-200" />
+          <p className="text-gray-400">No inventory items found.</p>
+        </div>
+      ) : (
+        <div className="card overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="border-b bg-gray-50">
+              <tr className="text-left text-xs text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-3 font-medium">Item</th>
+                <th className="px-4 py-3 font-medium">Category</th>
+                <th className="px-4 py-3 font-medium">Location</th>
+                <th className="px-4 py-3 font-medium text-right">Unit Value</th>
+                <th className="px-4 py-3 font-medium text-right">Stock</th>
+                <th className="px-4 py-3 font-medium text-right">Selling Price</th>
+                <th className="px-4 py-3 font-medium text-right">Stock Value</th>
+                <th className="px-4 py-3 font-medium text-right">Expiry</th>
+                <th className="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {items.map(item => {
+                const isLow = item.currentQuantity <= item.lowStockThreshold;
+                const isExpiring = item.expiryDate && item.expiryDate >= today && item.expiryDate <= expiryLimit;
+                return (
+                  <tr key={item.id} className="hover:bg-gray-50 cursor-pointer transition-colors" onClick={() => navigate(`/inventory/${item.id}`)}>
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-gray-900">{item.name}</p>
+                      {item.sku && <p className="text-xs text-gray-400">{item.sku}</p>}
+                    </td>
+                    <td className="px-4 py-3 text-gray-500">{item.category || "—"}</td>
+                    <td className="px-4 py-3 text-gray-500">{item.location || "—"}</td>
+                    <td className="px-4 py-3 text-right text-gray-500 font-mono text-xs">{item.unitValue || 1}</td>
+                    <td className="px-4 py-3 text-right">
+                      <span className={`font-semibold ${isLow ? "text-orange-600" : "text-gray-900"}`}>
+                        {item.currentQuantity} {item.unit}
+                      </span>
+                      {isLow && <AlertTriangle className="inline ml-1 w-3 h-3 text-orange-500" />}
+                    </td>
+                    <td className="px-4 py-3 text-right">{formatINR(item.sellingPrice)}</td>
+                    <td className="px-4 py-3 text-right font-medium">{formatINR(item.sellingPrice * item.currentQuantity)}</td>
+                    <td className="px-4 py-3 text-right">
+                      {item.expiryDate ? (
+                        <span className={isExpiring ? "text-orange-600 font-medium" : "text-gray-500"}>
+                          {formatDate(item.expiryDate)}
+                          {isExpiring && <Clock className="inline ml-1 w-3 h-3" />}
+                        </span>
+                      ) : "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-1 justify-end">
+                        <button className="btn btn-ghost p-1.5" onClick={e => { e.stopPropagation(); navigate(`/inventory/${item.id}`); }}><Eye className="w-4 h-4" /></button>
+                        <button className="btn btn-danger p-1.5" onClick={e => { e.stopPropagation(); if (confirm(`Delete "${item.name}"?`)) deleteMutation.mutate(item.id); }}><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Pagination Controls */}
+      {!isLoading && pagination.pages > 1 && (
+        <div className="mt-8 flex flex-col md:flex-row items-center justify-between gap-6 border-t border-slate-100 pt-8 pb-4">
+          <div className="flex flex-col gap-1">
+            <p className="text-sm text-slate-500 font-medium">
+              Showing Page <span className="text-slate-900 font-bold">{pagination.page}</span> of <span className="text-slate-900 font-bold">{pagination.pages}</span>
+            </p>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+              Total {pagination.total} Items
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Page Number Buttons */}
+            <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-xl border border-slate-100">
+              {Array.from({ length: pagination.pages }, (_, i) => i + 1)
+                .filter(p => p === 1 || p === pagination.pages || (p >= page - 1 && p <= page + 1))
+                .map((p, i, arr) => (
+                  <div key={p} className="flex items-center">
+                    {i > 0 && arr[i-1] !== p - 1 && <span className="text-slate-600 font-bold px-2">...</span>}
+                    <button
+                      onClick={() => { setPage(p); window.scrollTo(0, 0); }}
+                      className={`w-9 h-9 rounded-lg text-sm font-bold transition-all duration-200 ${
+                        page === p 
+                          ? "bg-blue-600 text-white shadow-lg shadow-blue-200 scale-105" 
+                          : "text-slate-500 hover:bg-white hover:text-blue-600 hover:shadow-sm"
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  </div>
+                ))}
+            </div>
+
+            {/* Jump to Page */}
+            <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-1.5 shadow-sm group focus-within:border-blue-400 transition-colors">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Go to</span>
+              <input 
+                type="number" 
+                min="1" 
+                max={pagination.pages}
+                placeholder={page}
+                className="w-10 bg-transparent text-sm font-bold text-slate-900 focus:outline-none text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const val = parseInt(e.target.value);
+                    if (val >= 1 && val <= pagination.pages) {
+                       setPage(val);
+                       window.scrollTo(0, 0);
+                       e.target.value = "";
+                       e.target.blur();
+                    }
+                  }
+                }}
+              />
+            </div>
+
+            {/* Navigation Buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { setPage(p => Math.max(1, p - 1)); window.scrollTo(0, 0); }}
+                disabled={page === 1}
+                className="h-10 px-4 rounded-xl bg-white border border-slate-200 text-slate-600 font-bold text-xs uppercase tracking-widest hover:bg-slate-50 hover:border-slate-300 disabled:opacity-30 disabled:pointer-events-none transition-all shadow-sm active:scale-95"
+              >
+                Prev
+              </button>
+              <button
+                onClick={() => { setPage(p => Math.min(pagination.pages, p + 1)); window.scrollTo(0, 0); }}
+                disabled={page === pagination.pages}
+                className="h-10 px-4 rounded-xl bg-white border border-slate-200 text-slate-600 font-bold text-xs uppercase tracking-widest hover:bg-slate-50 hover:border-slate-300 disabled:opacity-30 disabled:pointer-events-none transition-all shadow-sm active:scale-95"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

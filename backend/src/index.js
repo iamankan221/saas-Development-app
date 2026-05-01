@@ -3,6 +3,8 @@ import cors from "cors";
 import { config } from "./config/env.js";
 import { requestLogger, errorHandler, notFoundHandler } from "./middlewares/errorHandler.js";
 import { logger } from "./utils/index.js";
+import http from "http";
+import { Server } from "socket.io";
 
 BigInt.prototype.toJSON = function () {
   // We convert to a standard Number. 
@@ -18,6 +20,7 @@ import inventoryRoutes from "./routes/inventoryRoutes.js";
 import supplierRoutes from "./routes/supplierRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import analyticsRoutes from "./routes/analyticsRoutes.js";
+import settingsRoutes from "./routes/settingsRoutes.js";
 
 const app = express();
 
@@ -58,6 +61,9 @@ app.use("/api/suppliers", supplierRoutes);
 // Analytics Routes
 app.use("/api/analytics", analyticsRoutes);
 
+// Settings Routes
+app.use("/api/settings", settingsRoutes);
+
 // ============================================================================
 // ERROR HANDLING
 // ============================================================================
@@ -65,12 +71,34 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 // ============================================================================
+// SOCKET.IO (Remote Scanner)
+// ============================================================================
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: "*" }
+});
+
+io.on("connection", (socket) => {
+  // Join a unique session (e.g., specific PC window)
+  socket.on("join-session", (sessionId) => {
+    socket.join(sessionId);
+    logger.info(`📱 Device joined scan session: ${sessionId}`);
+  });
+
+  // Receive barcode from mobile and send to PC in same session
+  socket.on("scan-result", ({ sessionId, barcode }) => {
+    io.to(sessionId).emit("barcode-received", barcode);
+    logger.info(`🔍 Barcode [${barcode}] sent to session: ${sessionId}`);
+  });
+});
+
+// ============================================================================
 // START SERVER
 // ============================================================================
 const PORT = config.port;
 
-app.listen(PORT, () => {
-  logger.info(`🚀 Server running on http://localhost:${PORT}`);
+server.listen(PORT, "0.0.0.0", () => {
+  logger.info(`🚀 Server running on http://0.0.0.0:${PORT}`);
   logger.info(`📦 Environment: ${config.nodeEnv}`);
   logger.info(`🗄️  Database URL configured: ${config.database.url.substring(0, 50)}...`);
 });

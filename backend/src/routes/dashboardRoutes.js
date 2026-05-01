@@ -7,8 +7,41 @@ const router = express.Router();
 // Dashboard summary with Multi-Timeframe Analytics
 router.get("/summary", authMiddleware, async (req, res) => {
   try {
+    const { startDate, endDate, range } = req.query;
+    
+    const calculateGrowth = (curr, prev) => {
+      if (prev === 0n) return curr > 0n ? 100 : 0;
+      try {
+        return Number(((curr - prev) * 100n) / prev);
+      } catch (e) {
+        return 0;
+      }
+    };
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+
+    // Filter Dates
+    let filterStart = startDate ? new Date(startDate) : today;
+    let filterEnd = endDate ? new Date(endDate) : new Date();
+    if (endDate) filterEnd.setHours(23, 59, 59, 999);
+
+    // Handle range shorthand
+    if (range) {
+      filterEnd = new Date(); // current time
+      filterStart = new Date();
+      filterStart.setHours(0,0,0,0);
+      if (range === "7") filterStart.setDate(filterStart.getDate() - 7);
+      else if (range === "30") filterStart.setDate(filterStart.getDate() - 30);
+      else if (range === "90") filterStart.setDate(filterStart.getDate() - 90);
+      else if (range === "365") filterStart.setDate(filterStart.getDate() - 365);
+      else if (range === "1") {
+        filterStart.setDate(filterStart.getDate() - 1);
+        filterEnd = new Date(filterStart);
+        filterEnd.setHours(23, 59, 59, 999);
+      }
+      else if (range === "0") filterStart.setHours(0,0,0,0);
+    }
 
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
@@ -19,74 +52,130 @@ router.get("/summary", authMiddleware, async (req, res) => {
     const thirtyDaysAgo = new Date(today);
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const totalCustomers = await prisma.customer.count();
-    const items = await prisma.inventoryItem.findMany({
-      select: { currentQuantity: true, sellingPrice: true, lowStockThreshold: true, expiryDate: true },
-    });
+    // 1. Parallelize all high-level counts and simple sums for speed
+    const [
+      totalCustomers,
+      inventorySummary,
+      allTimeSalesAgg,
+      pendingSummary,
+      periodSummary,
+      todaySummary,
+      yesterdaySummary,
+      weeklySummary,
+      monthlySummary,
+    ] = await Promise.all([
+      prisma.customer.count().catch(() => 0),
+      prisma.inventoryItem.aggregate({
+        where: { status: "active" },
+        _sum: { currentQuantity: true },
+        _count: { id: true }
+      }).catch(() => ({ _sum: { currentQuantity: 0 }, _count: { id: 0 } })),
+      prisma.bill.aggregate({
+        where: { status: { not: "quotation" } },
+        _sum: { totalAmount: true }
+      }).catch(() => ({ _sum: { totalAmount: 0n } })),
+      prisma.bill.aggregate({
+        where: { status: { in: ["unpaid", "partial"] } },
+        _sum: { totalAmount: true, paidAmount: true }
+      }).catch(() => ({ _sum: { totalAmount: 0n, paidAmount: 0n } })),
+      
+      // Main Filtered Period
+      prisma.bill.aggregate({ 
+        where: { createdAt: { gte: filterStart, lte: filterEnd }, status: { not: "quotation" } }, 
+        _sum: { totalAmount: true },
+        _count: { id: true } 
+      }),
 
-    const totalStockValue = items.reduce((acc, item) => acc + BigInt(item.currentQuantity) * item.sellingPrice, 0n);
+      // Standard Timeframes for trends
+      prisma.bill.aggregate({ where: { createdAt: { gte: today }, status: { not: "quotation" } }, _sum: { totalAmount: true } }),
+      prisma.bill.aggregate({ where: { createdAt: { gte: yesterday, lt: today }, status: { not: "quotation" } }, _sum: { totalAmount: true } }),
+      prisma.bill.aggregate({ where: { createdAt: { gte: sevenDaysAgo, lt: today }, status: { not: "quotation" } }, _sum: { totalAmount: true } }),
+      prisma.bill.aggregate({ where: { createdAt: { gte: thirtyDaysAgo, lt: today }, status: { not: "quotation" } }, _sum: { totalAmount: true } }),
+    ]);
+
+    // 2. Optimized Profit & Stock Calculation
+    const items = await prisma.inventoryItem.findMany({
+      where: { status: "active" },
+      select: { currentQuantity: true, sellingPrice: true, purchasePrice: true, lowStockThreshold: true, expiryDate: true },
+    }).catch(() => []);
+
+    const totalStockValue = items.reduce((acc, item) => acc + BigInt(Math.floor(item.currentQuantity || 0)) * (item.sellingPrice || 0n), 0n);
     const lowStockCount = items.filter(i => i.currentQuantity <= i.lowStockThreshold && i.currentQuantity > 0).length;
 
-    // Fetch Sales for all periods
-    const getSalesInRange = async (start, end = null) => {
-      const bills = await prisma.bill.findMany({
-        where: { createdAt: end ? { gte: start, lt: end } : { gte: start } },
-        select: { totalAmount: true },
-      });
-      return bills.reduce((acc, b) => acc + b.totalAmount, 0n);
-    };
-
-    const todaySales = await getSalesInRange(today);
-    const yesterdaySales = await getSalesInRange(yesterday, today);
-    const lastWeekSales = await getSalesInRange(sevenDaysAgo, today);
-    const lastMonthSales = await getSalesInRange(thirtyDaysAgo, today);
-
-    // Helper to calculate growth percentage safely with BigInts
-    const calculateGrowth = (curr, prev) => {
-      if (prev === 0n) return curr > 0n ? 100 : 0;
-      try {
-        return Number(((curr - prev) * 100n) / prev);
-      } catch (e) {
-        return 0;
-      }
-    };
-
-    // 4. Fetch New Customers for all periods
-    const getNewCustomersInRange = async (start, end = null) => {
-      return await prisma.customer.count({
-        where: { createdAt: end ? { gte: start, lt: end } : { gte: start } }
-      });
-    };
-
-    const newCustYesterday = await getNewCustomersInRange(yesterday, today);
-    const newCustWeekly = await getNewCustomersInRange(sevenDaysAgo, today);
-    const newCustMonthly = await getNewCustomersInRange(thirtyDaysAgo, today);
-
-    // 5. Fetch Historical Unpaid Amount (Point-in-time)
-    const getUnpaidAtPoint = async (point) => {
-      const unpaidBills = await prisma.bill.findMany({
-        where: {
-          createdAt: { lt: point },
-          OR: [
-            { status: "unpaid" },
-            { paidDate: { gte: point } }
-          ]
+    // 3. Robust Profit Logic
+    const getProfitForPeriod = async (start, end = null) => {
+      const billItems = await prisma.billItem.findMany({
+        where: { 
+          bill: { 
+            createdAt: end ? { gte: start, lt: end } : { gte: start },
+            status: { not: "quotation" } 
+          } 
         },
-        select: { totalAmount: true }
+        include: { inventoryItem: { select: { purchasePrice: true } } }
+      }).catch(() => []);
+
+      let profit = 0n;
+      billItems.forEach(item => {
+        const rev = item.subtotal || 0n;
+        const cost = (item.inventoryItem?.purchasePrice || 0n) * BigInt(Math.floor(item.quantity || 0));
+        profit += (rev - cost);
       });
-      return unpaidBills.reduce((acc, b) => acc + b.totalAmount, 0n);
+      return profit;
     };
 
-    const currentUnpaid = (await prisma.bill.aggregate({ where: { status: "unpaid" }, _sum: { totalAmount: true } }))._sum.totalAmount || 0n;
-    const unpaidYesterday = await getUnpaidAtPoint(today);
-    const unpaidLastWeek = await getUnpaidAtPoint(sevenDaysAgo);
-    const unpaidLastMonth = await getUnpaidAtPoint(thirtyDaysAgo);
+    const periodProfit = await getProfitForPeriod(filterStart, filterEnd);
+    const todayProfit = await getProfitForPeriod(today);
+    const yesterdayProfit = await getProfitForPeriod(yesterday, today);
+
+    // 4. Resolve New Customer Counts
+    const getCustCount = async (start, end = null) => {
+      return prisma.customer.count({ where: { createdAt: end ? { gte: start, lt: end } : { gte: start } } }).catch(() => 0);
+    };
+    const [periodNewCustomers, newCustYesterday] = await Promise.all([
+      getCustCount(filterStart, filterEnd),
+      getCustCount(yesterday, today),
+    ]);
+
+    // 5. Unpaid Calculation
+    const currentUnpaid = (pendingSummary._sum.totalAmount || 0n) - (pendingSummary._sum.paidAmount || 0n);
+
+    // Trend comparisons for unpaid
+    const getUnpaidAtPoint = async (point) => {
+      const agg = await prisma.bill.aggregate({
+        where: { 
+          createdAt: { lt: point }, 
+          status: { not: "quotation" },
+          OR: [{ status: { in: ["unpaid", "partial"] } }, { paidDate: { gte: point } }]
+        },
+        _sum: { totalAmount: true, paidAmount: true }
+      }).catch(() => ({ _sum: { totalAmount: 0n, paidAmount: 0n } }));
+      return (agg._sum.totalAmount || 0n) - (agg._sum.paidAmount || 0n);
+    };
+
+    const [unpaidYesterday, unpaidLastWeek, unpaidLastMonth] = await Promise.all([
+      getUnpaidAtPoint(today),
+      getUnpaidAtPoint(sevenDaysAgo),
+      getUnpaidAtPoint(thirtyDaysAgo)
+    ]);
+
+    // Format final response
+    const todaySales = todaySummary._sum.totalAmount || 0n;
+    const yesterdaySales = yesterdaySummary._sum.totalAmount || 0n;
+    const periodSales = periodSummary._sum.totalAmount || 0n;
+    const lastWeekSales = weeklySummary._sum.totalAmount || 0n;
+    const lastMonthSales = monthlySummary._sum.totalAmount || 0n;
 
     res.json({
+      isFiltered: !!(startDate || endDate),
       totalStockValue: Number(totalStockValue),
       lowStockCount,
       todaySales: Number(todaySales),
-      todayProfit: Number((todaySales * 22n) / 100n),
+      todayProfit: Number(todayProfit),
+      periodSales: Number(periodSales),
+      periodProfit: Number(periodProfit),
+      totalBills: periodSummary._count.id || 0,
+      periodNewCustomers,
+      allTimeSales: Number(allTimeSalesAgg._sum.totalAmount || 0n),
       unpaidAmount: Number(currentUnpaid),
       totalCustomers,
       expiringItemsCount: items.filter(i => {
@@ -99,20 +188,20 @@ router.get("/summary", authMiddleware, async (req, res) => {
       growth: {
         yesterday: {
           sales: calculateGrowth(todaySales, yesterdaySales),
-          profit: calculateGrowth(todaySales, yesterdaySales),
+          profit: calculateGrowth(todayProfit, yesterdayProfit),
           customers: newCustYesterday,
           unpaid: calculateGrowth(currentUnpaid, unpaidYesterday),
         },
         weekly: {
           sales: calculateGrowth(todaySales, lastWeekSales / 7n),
-          profit: calculateGrowth(todaySales, lastWeekSales / 7n),
-          customers: newCustWeekly,
+          profit: calculateGrowth(todayProfit, (await getProfitForPeriod(sevenDaysAgo, today)) / 7n),
+          customers: await getCustCount(sevenDaysAgo, today),
           unpaid: calculateGrowth(currentUnpaid, unpaidLastWeek),
         },
         monthly: {
           sales: calculateGrowth(todaySales, lastMonthSales / 30n),
-          profit: calculateGrowth(todaySales, lastMonthSales / 30n),
-          customers: newCustMonthly,
+          profit: calculateGrowth(todayProfit, (await getProfitForPeriod(thirtyDaysAgo, today)) / 30n),
+          customers: await getCustCount(thirtyDaysAgo, today),
           unpaid: calculateGrowth(currentUnpaid, unpaidLastMonth),
         }
       }

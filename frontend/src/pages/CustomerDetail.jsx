@@ -291,7 +291,7 @@ export default function CustomerDetail() {
             { label: "Email Address", value: customer.email },
             { label: "GST Number", value: customer.gstNumber },
             { label: "PAN Number", value: customer.panNumber },
-            { label: "Credit Limit", value: customer.creditLimit ? formatINR(customer.creditLimit) : "Not set" },
+            { label: "Pincode", value: customer.pincode },
             { label: "Last Purchase", value: customer.lastPurchaseDate ? formatDate(customer.lastPurchaseDate) : "No purchases" },
             { label: "Total Visits", value: customer.billCount ? `${customer.billCount} Times` : "0 Times" },
             { label: "Lifetime Profit", value: formatINR(customer.totalProfit || 0), color: "text-emerald-600 font-bold" },

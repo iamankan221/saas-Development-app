@@ -42,10 +42,16 @@ export const billService = {
       ];
     }
     if (filters.status) {
-      where.status = filters.status;
+      const statusArr = Array.isArray(filters.status) ? filters.status : [filters.status];
+      where.status = { in: statusArr };
     }
     if (filters.customerId) {
       where.customerId = parseInt(filters.customerId);
+    }
+    if (filters.startDate || filters.endDate) {
+      where.createdAt = {};
+      if (filters.startDate) where.createdAt.gte = new Date(filters.startDate);
+      if (filters.endDate) where.createdAt.lte = new Date(new Date(filters.endDate).setHours(23, 59, 59, 999));
     }
 
     const [bills, total, summaryAggs] = await Promise.all([
@@ -224,6 +230,7 @@ export const billService = {
           totalAmount: finalTotalAmount,
           paidAmount,
           status,
+          paymentMethod: data.paymentMethod || null,
           notes: data.notes || null,
           dueDate: data.dueDate ? new Date(data.dueDate) : null,
           items: {
@@ -317,10 +324,41 @@ export const billService = {
     return bill;
   },
 
-  // Delete bill
+  // Delete bill and cleanup orphaned customer
   async delete(id) {
-    await prisma.bill.delete({
-      where: { id: parseInt(id) },
+    const billId = parseInt(id);
+    
+    return await prisma.$transaction(async (tx) => {
+      // 1. Fetch bill to get customer reference
+      const bill = await tx.bill.findUnique({
+        where: { id: billId },
+        select: { customerId: true }
+      });
+
+      if (!bill) throw new Error("Bill not found");
+
+      // 2. Delete the bill
+      await tx.bill.delete({
+        where: { id: billId },
+      });
+
+      // 3. Automated Cleanup: If no more bills exist for this customer, remove them
+      if (bill.customerId) {
+        const remainingRecords = await tx.bill.count({
+          where: { customerId: bill.customerId }
+        });
+
+        if (remainingRecords === 0) {
+          // Double check there are no other references if needed, 
+          // but for this app, Bill is the primary relationship.
+          await tx.customer.delete({
+            where: { id: bill.customerId }
+          }).catch(() => {
+            // Ignore if deletion fails (e.g. if other relations exist that we missed)
+            console.log(`Failed to cleanup orphaned customer ${bill.customerId}`);
+          });
+        }
+      }
     });
   },
 

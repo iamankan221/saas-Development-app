@@ -1,1 +1,0 @@
-import { PrismaClient } from '@prisma/client'; const prisma = new PrismaClient(); async function main() { const customers = await prisma.customer.findMany({ orderBy: { id: 'desc' }, take: 2 }); console.log(customers); } main().finally(() => { process.exit(0); });

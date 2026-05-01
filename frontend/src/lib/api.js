@@ -135,9 +135,10 @@ export const apiClient = {
   refresh:        (data) => api.post("/auth/refresh", data).then(r => r.data),
   logout:         (data) => api.post("/auth/logout", data).then(r => r.data),
   getMe:          ()     => api.get("/auth/me").then(r => r.data),
+  changePassword: (data) => api.post("/auth/change-password", data).then(r => r.data),
 
   // Dashboard
-  getDashboardSummary:       () => api.get("/dashboard/summary").then(r => r.data),
+  getDashboardSummary:       (params) => api.get("/dashboard/summary", { params }).then(r => r.data),
   getDashboardActivity:      () => api.get("/dashboard/recent-activity").then(r => r.data),
 
   // Customers
@@ -177,6 +178,8 @@ export const apiClient = {
   getSalesAnalytics:         (params) => api.get("/analytics/sales", { params }).then(r => r.data),
   getProfitLossAnalytics:    (params) => api.get("/analytics/profit-loss", { params }).then(r => r.data),
   getTopSellingItems:        (params) => api.get("/analytics/top-items", { params }).then(r => r.data),
+  getIntelligenceAnalytics:  (params) => api.get("/analytics/intelligence", { params }).then(r => r.data),
+  getCustomerBehaviour:      (params) => api.get("/analytics/customer-behaviour", { params }).then(r => r.data),
 
   // Settings
   getSettings:               () => api.get("/settings").then(r => r.data),
@@ -184,11 +187,51 @@ export const apiClient = {
 };
 
 export const formatINR = (val) => {
+  if (val == null) return "₹0.00";
+  return new Intl.NumberFormat("en-IN", { 
+    style: "currency", 
+    currency: "INR", 
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2 
+  }).format(val);
+};
+
+export const formatINRInteger = (val) => {
   if (val == null) return "₹0";
-  return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(val);
+  return new Intl.NumberFormat("en-IN", { 
+    style: "currency", 
+    currency: "INR", 
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0 
+  }).format(val);
 };
 
 export const formatDate = (d) => {
   if (!d) return "-";
-  return new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  const date = new Date(d);
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+};
+
+export const maskPhone = (phone, isMasked = false) => {
+  if (!phone) return "-";
+  const clean = phone.replace(/\D/g, "");
+  let display = clean;
+  // If saved with 91, strip it for display since we show +91 prefix
+  if (clean.length === 12 && clean.startsWith("91")) {
+    display = clean.slice(2);
+  }
+  
+  if (!isMasked) return display;
+  if (display.length < 5) return display; 
+  return `${display.slice(0, 2)}******${display.slice(-2)}`;
+};
+
+export const normalizePhone = (phone) => {
+  if (!phone) return null;
+  const clean = phone.replace(/\D/g, "");
+  if (clean.length === 10) return `91${clean}`;
+  return clean;
 };

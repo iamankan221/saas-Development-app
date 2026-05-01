@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { apiClient, formatINR, formatDate } from "@/lib/api";
-import { ArrowLeft, Printer } from "lucide-react";
+import { ArrowLeft, Printer, Calendar, AlertCircle } from "lucide-react";
 import { generateInvoicePDF } from "@/lib/invoicePDF";
 
 export default function BillDetail() {
@@ -29,8 +29,17 @@ export default function BillDetail() {
   if (!bill) return <p className="text-center py-20 text-red-500">Bill not found.</p>;
 
   const statusBadge = (s) => {
-    const map = { paid: "badge-green", unpaid: "badge-red", partial: "badge-yellow", draft: "badge-gray" };
-    return <span className={`badge ${map[s] || "badge-gray"} text-sm px-3 py-1`}>{s === "partial" ? "Partial Paid" : s}</span>;
+    const map = { 
+      paid: "bg-emerald-100 text-emerald-700 border-emerald-200", 
+      unpaid: "bg-rose-100 text-rose-700 border-rose-200", 
+      partial: "bg-amber-100 text-amber-700 border-amber-200", 
+      quotation: "bg-blue-100 text-blue-700 border-blue-200" 
+    };
+    return (
+      <span className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest border shadow-sm ${map[s] || "bg-gray-100 text-gray-700 border-gray-200"}`}>
+        {s === "partial" ? "Partial Paid" : s}
+      </span>
+    );
   };
 
   return (
@@ -76,7 +85,10 @@ export default function BillDetail() {
             <p className="text-2xl font-bold text-gray-900">{bill.billNumber}</p>
             <p className="text-sm text-gray-500 mt-1">Date: {formatDate(bill.createdAt)}</p>
             {bill.dueDate && (bill.status === "unpaid" || bill.status === "partial") && (
-              <p className="text-sm text-gray-500">Due: {formatDate(bill.dueDate)}</p>
+              <div className="flex items-center gap-1.5 justify-end mt-2 bg-rose-50 border border-rose-100 px-3 py-1.5 rounded-xl w-fit ml-auto shadow-sm">
+                <Calendar className="w-3.5 h-3.5 text-rose-600" />
+                <p className="text-[11px] font-black text-rose-600 uppercase tracking-tight">Due: {formatDate(bill.dueDate)}</p>
+              </div>
             )}
           </div>
         </div>
@@ -131,7 +143,15 @@ export default function BillDetail() {
             </div>
             <div className="flex justify-between text-emerald-600"><span>Paid</span><span>{formatINR(bill.paidAmount || 0)}</span></div>
             {Number(bill.totalAmount || 0) - Number(bill.paidAmount || 0) > 0 && (
-              <div className="flex justify-between text-red-600 font-semibold"><span>Balance Due</span><span>{formatINR(Number(bill.totalAmount || 0) - Number(bill.paidAmount || 0))}</span></div>
+              <div className="flex justify-between items-center bg-rose-50 border border-rose-100 px-4 py-3 rounded-2xl mt-4 shadow-sm animate-pulse-subtle">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600" />
+                  <span className="text-rose-600 font-bold text-xs uppercase tracking-wider">Balance Due</span>
+                </div>
+                <span className="text-rose-700 font-black text-lg tracking-tight">
+                  {formatINR(Number(bill.totalAmount || 0) - Number(bill.paidAmount || 0))}
+                </span>
+              </div>
             )}
           </div>
         </div>

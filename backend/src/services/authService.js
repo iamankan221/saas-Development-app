@@ -252,6 +252,37 @@ export async function cleanupExpiredTokens() {
 }
 
 // ============================================================================
+// CHANGE PASSWORD
+// ============================================================================
+
+export async function changePassword(userId, { currentPassword, newPassword }) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  
+  if (!user) {
+    const error = new Error("User not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  // Verify current password
+  const isMatch = await bcrypt.compare(currentPassword, user.password);
+  if (!isMatch) {
+    const error = new Error("Incorrect current password");
+    error.statusCode = 401;
+    throw error;
+  }
+
+  // Hash and save new password
+  const hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
+  await prisma.user.update({
+    where: { id: userId },
+    data: { password: hashedPassword }
+  });
+
+  logger.info(`Password changed for user ID: ${userId}`);
+}
+
+// ============================================================================
 // HELPERS
 // ============================================================================
 

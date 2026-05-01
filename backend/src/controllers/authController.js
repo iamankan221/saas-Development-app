@@ -92,3 +92,24 @@ export async function getMe(req, res, next) {
     next(err);
   }
 }
+
+// POST /api/auth/change-password
+export async function changePassword(req, res, next) {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: "Both current and new passwords are required" });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: "New password must be at least 6 characters" });
+    }
+
+    await authService.changePassword(req.user.id, { currentPassword, newPassword });
+
+    res.json({ message: "Password changed successfully" });
+  } catch (err) {
+    next(err);
+  }
+}

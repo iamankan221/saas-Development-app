@@ -20,13 +20,25 @@ export const customerService = {
     if (filters.status) {
       where.status = filters.status;
     }
+    if (filters.withDebt === "true" || filters.withDebt === true) {
+      where.bills = { some: { status: { in: ["unpaid", "partial"] } } };
+    }
+    if (filters.fromDate || filters.toDate) {
+      where.createdAt = {};
+      if (filters.fromDate) where.createdAt.gte = new Date(filters.fromDate);
+      if (filters.toDate) where.createdAt.lte = new Date(new Date(filters.toDate).setHours(23, 59, 59, 999));
+    }
+
+    let orderBy = { createdAt: "desc" };
+    if (filters.sortBy === "oldest") orderBy = { createdAt: "asc" };
+    if (filters.sortBy === "name") orderBy = { name: "asc" };
 
     const [customers, total, activeCount, globalBillAggs] = await Promise.all([
       prisma.customer.findMany({
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: "desc" },
+        orderBy,
       }),
       prisma.customer.count({ where }),
       prisma.customer.count({ where: { ...where, status: "active" } }),
@@ -152,6 +164,8 @@ export const customerService = {
             name: data.name || existing.name,
             email: data.email || existing.email,
             address: data.address || existing.address,
+            pincode: data.pincode || existing.pincode,
+            gender: data.gender || existing.gender,
             gstNumber: data.gstNumber || existing.gstNumber,
             panNumber: data.panNumber || existing.panNumber,
           },
@@ -165,6 +179,8 @@ export const customerService = {
         phone: data.phone,
         email: data.email,
         address: data.address,
+        pincode: data.pincode,
+        gender: data.gender,
         gstNumber: data.gstNumber,
         panNumber: data.panNumber,
       },
@@ -180,6 +196,8 @@ export const customerService = {
         name: data.name,
         email: data.email,
         address: data.address,
+        pincode: data.pincode,
+        gender: data.gender,
         gstNumber: data.gstNumber,
         panNumber: data.panNumber,
         status: data.status,
@@ -238,6 +256,9 @@ export const customerService = {
         name: true,
         phone: true,
         email: true,
+        address: true,
+        pincode: true,
+        gender: true,
         gstNumber: true,
       },
     });

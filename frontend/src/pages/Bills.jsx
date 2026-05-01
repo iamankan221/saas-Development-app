@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { apiClient, formatINR, formatDate } from "@/lib/api";
@@ -10,6 +10,7 @@ const STATUS_OPTIONS = ["paid", "unpaid", "partial", "quotation"];
 
 export default function Bills() {
   const [, navigate] = useLocation();
+  const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [selectedStatuses, setSelectedStatuses] = useState(new Set()); 
   const [startDate, setStartDate] = useState("");
@@ -42,10 +43,23 @@ export default function Bills() {
     }
   };
 
+  // Reset page on filter change
+  useEffect(() => {
+    setPage(1);
+  }, [selectedStatuses, startDate, endDate, search]);
+
   const { data: billsRes, isLoading } = useQuery({
-    queryKey: ["bills", page],
+    queryKey: ["bills", page, Array.from(selectedStatuses), startDate, endDate, search],
     queryFn: async() => {
-      const response = await apiClient.getBills({ page, limit: 20 });
+      const params = { 
+        page, 
+        limit: 10,
+        search: search || undefined,
+        status: selectedStatuses.size > 0 ? Array.from(selectedStatuses) : undefined,
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+      };
+      const response = await apiClient.getBills(params);
       return response;
     },
   });
@@ -84,35 +98,21 @@ export default function Bills() {
 
   const clearAllFilters = () => setSelectedStatuses(new Set());
 
-  // Client-side filtering (status + date)
-  const filteredBills = bills.filter(b => {
-    // Status filter
-    if (selectedStatuses.size > 0 && !selectedStatuses.has(b.status)) return false;
-    // Date filter
-    if (startDate) {
-      const billDate = new Date(b.createdAt).toISOString().split('T')[0];
-      if (billDate < startDate) return false;
-    }
-    if (endDate) {
-      const billDate = new Date(b.createdAt).toISOString().split('T')[0];
-      if (billDate > endDate) return false;
-    }
-    return true;
-  });
+  const filteredBills = bills;
 
   const totals = {
-    total: filteredBills.reduce((a, b) => a + Number(b.totalAmount), 0),
-    paid: filteredBills.filter(b => b.status === "paid").reduce((a, b) => a + Number(b.totalAmount), 0),
-    unpaid: filteredBills.filter(b => b.status === "unpaid").reduce((a, b) => a + Number(b.totalAmount), 0),
-    partial: filteredBills.filter(b => b.status === "partial").reduce((a, b) => a + Number(b.paidAmount || 0), 0),
+    total: billsRes?.summary?.total || 0,
+    paid: billsRes?.summary?.paid || 0,
+    unpaid: billsRes?.summary?.unpaid || 0,
+    partial: billsRes?.summary?.partial || 0,
   };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Bills & Invoices</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage all your invoices</p>
+          <h1 className="text-2xl font-bold text-foreground">Bills & Invoices</h1>
+          <p className="text-sm text-muted-foreground mt-1">Manage all your invoices</p>
         </div>
         <div className="flex gap-3">
           <button className="btn btn-outline" onClick={() => setShowReturn(true)}>
@@ -127,27 +127,37 @@ export default function Bills() {
       {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: "Total",        value: formatINR(billsRes?.summary?.total || 0),   color: "text-gray-900" },
-          { label: "Paid",         value: formatINR(billsRes?.summary?.paid || 0),    color: "text-emerald-600" },
-          { label: "Unpaid",       value: formatINR(billsRes?.summary?.unpaid || 0),  color: "text-red-600" },
-          { label: "Partial Paid", value: formatINR(billsRes?.summary?.partial || 0), color: "text-amber-600" },
+          { label: "Total",        value: formatINR(billsRes?.summary?.total || 0),   color: "text-foreground" },
+          { label: "Paid",         value: formatINR(billsRes?.summary?.paid || 0),    color: "text-emerald-500" },
+          { label: "Unpaid",       value: formatINR(billsRes?.summary?.unpaid || 0),  color: "text-destructive" },
+          { label: "Partial Paid", value: formatINR(billsRes?.summary?.partial || 0), color: "text-amber-500" },
         ].map(c => (
           <div key={c.label} className="card p-4">
-            <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">{c.label}</p>
-            <p className={`text-xl font-bold mt-1 ${c.color}`}>{c.value}</p>
+            <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest">{c.label}</p>
+            <p className={`text-xl font-black mt-1 ${c.color}`}>{c.value}</p>
           </div>
         ))}
       </div>
 
       {/* Filters & Date Picker */}
-      <div className="flex items-center gap-4 flex-wrap">
-        <div className="relative flex p-1.5 bg-slate-100/50 rounded-2xl border border-slate-200/50 overflow-hidden w-fit">
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="relative shrink-0 w-64">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            className="input pl-9"
+            placeholder="Search bills, code, customer..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+
+        <div className="relative flex p-1.5 bg-accent rounded-2xl border border-border overflow-hidden w-fit">
           <button
             onClick={clearAllFilters}
-            className={`relative z-10 px-6 py-2 rounded-xl text-sm font-bold transition-all duration-300 ${
+            className={`relative z-10 px-4 py-2 rounded-xl text-sm font-bold transition-all duration-300 ${
               selectedStatuses.size === 0
-                ? "text-white bg-[#0061FF] shadow-lg shadow-blue-600/20"
-                : "text-slate-500 hover:bg-[#0061FF] hover:text-white hover:shadow-lg hover:shadow-blue-600/10"
+                ? "text-primary-foreground bg-primary shadow-lg shadow-primary/20"
+                : "text-muted-foreground hover:bg-primary hover:text-primary-foreground hover:shadow-lg hover:shadow-primary/10"
             }`}
           >
             All
@@ -160,10 +170,10 @@ export default function Bills() {
                 <button
                   key={s}
                   onClick={() => toggleStatus(s)}
-                  className={`relative z-10 px-6 py-2 rounded-xl text-sm font-bold transition-all duration-300 ${
+                  className={`relative z-10 px-4 py-2 rounded-xl text-sm font-bold transition-all duration-300 ${
                     active
-                      ? "text-white bg-[#0061FF] shadow-lg shadow-blue-600/20"
-                      : "text-slate-500 hover:bg-[#0061FF] hover:text-white hover:shadow-lg hover:shadow-blue-600/10"
+                      ? "text-primary-foreground bg-primary shadow-lg shadow-primary/20"
+                      : "text-muted-foreground hover:bg-primary hover:text-primary-foreground hover:shadow-lg hover:shadow-primary/10"
                   }`}
                 >
                   {s === "partial" ? "Partial" : s === "quotation" ? "Quote" : s.charAt(0).toUpperCase() + s.slice(1)}
@@ -172,11 +182,11 @@ export default function Bills() {
             })}
           </div>
         </div>
-        <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm shrink-0">
+        <div className="flex items-center gap-3 bg-card border border-border rounded-xl px-4 py-2 shadow-sm shrink-0">
           <div className="flex items-center gap-2 cursor-default">
             <div className="relative">
               <Calendar 
-                className="w-3.5 h-3.5 text-slate-400 cursor-pointer hover:text-blue-600 transition-colors" 
+                className="w-4 h-4 text-primary cursor-pointer hover:opacity-80 transition-opacity" 
                 onClick={() => {
                   const el = document.getElementById('bill-start-date');
                   if (el?.showPicker) el.showPicker(); else el?.click();
@@ -200,20 +210,21 @@ export default function Bills() {
                 }}
               />
             </div>
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-tight w-10 shrink-0 select-none">FROM</span>
+            <span className="text-[10px] font-black text-foreground uppercase tracking-widest w-10 shrink-0 select-none">FROM</span>
             <div className="relative flex-1 flex items-center h-8 cursor-text" onClick={() => fromTextRef.current?.focus()}>
               {/* Ghost Suggestion Layer */}
-              {!startText && <span className="absolute inset-0 text-sm text-slate-300 pointer-events-none flex items-center h-full">DD/MM/YYYY</span>}
+              {!startText && <span className="absolute inset-0 text-[11px] font-black text-muted-foreground/60 pointer-events-none flex items-center h-full uppercase tracking-tighter">DD/MM/YYYY</span>}
               {startText && startText.length < 10 && (
-                <span className="absolute inset-0 text-sm pointer-events-none flex items-center h-full">
+                <span className="absolute inset-0 text-[11px] font-black pointer-events-none flex items-center h-full uppercase tracking-tighter">
                   <span className="opacity-0">{startText}</span>
-                  <span className="text-slate-200">{"DD/MM/YYYY".slice(startText.length)}</span>
+                  <span className="text-muted-foreground/30">{"DD/MM/YYYY".slice(startText.length)}</span>
                 </span>
               )}
               <input 
                 ref={fromTextRef}
                 type="text" 
-                className="relative z-10 text-sm text-slate-900 focus:outline-none bg-transparent w-full h-full py-1 caret-blue-500" 
+                className="relative z-10 text-[11px] font-black text-foreground focus:outline-none bg-transparent w-full h-full py-1 uppercase tracking-tighter" 
+                style={{ caretColor: "var(--primary)" }}
                 value={startText}
                 onChange={e => handleDateChange(e.target.value, setStartText, setStartDate, toTextRef)}
                 onKeyDown={e => {
@@ -229,7 +240,7 @@ export default function Bills() {
           <div className="flex items-center gap-2 cursor-default">
             <div className="relative">
               <Calendar 
-                className="w-3.5 h-3.5 text-slate-400 cursor-pointer hover:text-blue-600 transition-colors" 
+                className="w-4 h-4 text-primary cursor-pointer hover:opacity-80 transition-opacity" 
                 onClick={() => {
                   const el = document.getElementById('bill-end-date');
                   if (el?.showPicker) el.showPicker(); else el?.click();
@@ -254,20 +265,21 @@ export default function Bills() {
                 }}
               />
             </div>
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-tight w-8 shrink-0 text-center select-none">TO</span>
+            <span className="text-[10px] font-black text-foreground uppercase tracking-widest w-8 shrink-0 text-center select-none">TO</span>
             <div className="relative flex-1 flex items-center h-8 cursor-text" onClick={() => toTextRef.current?.focus()}>
               {/* Ghost Suggestion Layer */}
-              {!endText && <span className="absolute inset-0 text-sm text-slate-300 pointer-events-none flex items-center h-full">DD/MM/YYYY</span>}
+              {!endText && <span className="absolute inset-0 text-[11px] font-black text-muted-foreground/60 pointer-events-none flex items-center h-full uppercase tracking-tighter">DD/MM/YYYY</span>}
               {endText && endText.length < 10 && (
-                <span className="absolute inset-0 text-sm pointer-events-none flex items-center h-full">
+                <span className="absolute inset-0 text-[11px] font-black pointer-events-none flex items-center h-full uppercase tracking-tighter">
                   <span className="opacity-0">{endText}</span>
-                  <span className="text-slate-200">{"DD/MM/YYYY".slice(endText.length)}</span>
+                  <span className="text-muted-foreground/30">{"DD/MM/YYYY".slice(endText.length)}</span>
                 </span>
               )}
               <input 
                 ref={toTextRef}
                 type="text" 
-                className="relative z-10 text-sm text-slate-900 focus:outline-none bg-transparent w-full h-full py-1 caret-blue-500" 
+                className="relative z-10 text-[11px] font-black text-foreground focus:outline-none bg-transparent w-full h-full py-1 uppercase tracking-tighter" 
+                style={{ caretColor: "var(--primary)" }}
                 value={endText}
                 onChange={e => handleDateChange(e.target.value, setEndText, setEndDate)}
                 onKeyDown={e => {
@@ -300,11 +312,11 @@ export default function Bills() {
 
       {/* Table */}
       {isLoading ? (
-        <p className="text-center py-10 text-gray-400">Loading bills…</p>
+        <p className="text-center py-10 text-muted-foreground animate-pulse">Loading bills…</p>
       ) : filteredBills.length === 0 ? (
         <div className="card flex flex-col items-center py-16 gap-3">
-          <FileText className="w-12 h-12 text-gray-200" />
-          <p className="text-gray-400">No bills found.</p>
+          <FileText className="w-12 h-12 text-muted-foreground/10" />
+          <p className="text-muted-foreground font-black uppercase tracking-widest text-[10px]">No bills found</p>
           <button className="btn btn-primary mt-2" onClick={() => navigate("/bills/new")}>
             <Plus className="w-4 h-4" /> Create First Bill
           </button>
@@ -312,30 +324,30 @@ export default function Bills() {
       ) : (
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="border-b bg-gray-50">
-              <tr className="text-left text-xs text-gray-500 uppercase tracking-wider">
-                <th className="px-4 py-3 font-medium">Bill #</th>
-                <th className="px-4 py-3 font-medium">Invoice No.</th>
-                <th className="px-4 py-3 font-medium">Customer</th>
-                <th className="px-4 py-3 font-medium">Date</th>
-                <th className="px-4 py-3 font-medium">Due Date</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium text-right">Amount</th>
-                <th className="px-4 py-3 font-medium text-right">Paid</th>
+            <thead className="border-b border-border bg-accent/30">
+              <tr className="text-left text-xs text-muted-foreground uppercase tracking-wider">
+                <th className="px-4 py-3 font-bold">Bill #</th>
+                <th className="px-4 py-3 font-bold">Invoice No.</th>
+                <th className="px-4 py-3 font-bold">Customer</th>
+                <th className="px-4 py-3 font-bold">Date</th>
+                <th className="px-4 py-3 font-bold">Due Date</th>
+                <th className="px-4 py-3 font-bold">Status</th>
+                <th className="px-4 py-3 font-bold text-right">Amount</th>
+                <th className="px-4 py-3 font-bold text-right">Paid</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-border">
               {filteredBills.map(b => (
                 <tr
                   key={b.id}
-                  className="hover:bg-gray-50 cursor-pointer transition-colors"
+                  className="hover:bg-accent/50 cursor-pointer transition-colors"
                   onClick={() => navigate(`/bills/${b.id}`)}
                 >
-                  <td className="px-4 py-3 font-medium text-blue-600">{b.billNumber}</td>
+                  <td className="px-4 py-3 font-bold text-primary">{b.billNumber}</td>
                   <td className="px-4 py-3">
                     <div className="inline-flex items-center gap-1.5">
-                      <span className="font-mono text-xs font-semibold tracking-wider bg-amber-50 text-amber-700 border border-amber-200 px-2 py-1 rounded-md">
+                      <span className="font-mono text-xs font-semibold tracking-wider bg-amber-500/10 text-amber-500 border border-amber-500/20 px-2 py-1 rounded-md">
                         {b.billCode || "—"}
                       </span>
                       {b.billCode && (
@@ -358,17 +370,17 @@ export default function Bills() {
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-gray-900 font-medium">
+                  <td className="px-4 py-3 text-foreground font-bold">
                     {b.customerName?.toLowerCase().includes("walk-in") 
                       ? `Walk-in #${b.billCode || "N/A"}` 
                       : (b.customerName || "Walk-in")
                     }
                   </td>
-                  <td className="px-4 py-3 text-gray-500">{formatDate(b.createdAt)}</td>
-                  <td className="px-4 py-3 text-gray-500">{formatDate(b.dueDate)}</td>
+                  <td className="px-4 py-3 text-muted-foreground font-medium">{formatDate(b.createdAt)}</td>
+                  <td className="px-4 py-3 text-muted-foreground font-medium">{formatDate(b.dueDate)}</td>
                   <td className="px-4 py-3">{statusBadge(b.status)}</td>
-                  <td className="px-4 py-3 text-right font-semibold">{formatINR(b.totalAmount)}</td>
-                  <td className="px-4 py-3 text-right text-emerald-600 font-medium">{formatINR(b.paidAmount || 0)}</td>
+                  <td className="px-4 py-3 text-right font-black text-foreground">{formatINR(b.totalAmount)}</td>
+                  <td className="px-4 py-3 text-right text-emerald-500 font-bold">{formatINR(b.paidAmount || 0)}</td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1 justify-end">
                       {(b.status === "unpaid" || b.status === "partial") && (
@@ -405,25 +417,78 @@ export default function Bills() {
 
       {/* Pagination Controls */}
       {!isLoading && pagination.pages > 1 && (
-        <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-6">
-          <p className="text-sm text-slate-500 font-medium">
-            Showing <span className="text-slate-900">Page {pagination.page}</span> of <span className="text-slate-900">{pagination.pages}</span>
-          </p>
-          <div className="flex gap-3">
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="btn bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none px-6"
-            >
-              Previous
-            </button>
-            <button
-              onClick={() => setPage(p => Math.min(pagination.pages, p + 1))}
-              disabled={page === pagination.pages}
-              className="btn bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none px-6"
-            >
-              Next
-            </button>
+        <div className="mt-8 flex flex-col md:flex-row items-center justify-between gap-6 border-t border-border pt-8 pb-4">
+          <div className="flex flex-col gap-1">
+            <p className="text-sm text-muted-foreground font-medium">
+              Showing Page <span className="text-foreground font-bold">{pagination.page}</span> of <span className="text-foreground font-bold">{pagination.pages}</span>
+            </p>
+            <p className="text-[10px] text-muted-foreground/50 font-bold uppercase tracking-wider">
+              Total {pagination.total} Bills
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Page Number Buttons */}
+            <div className="flex items-center gap-1 bg-accent p-1 rounded-xl border border-border">
+              {Array.from({ length: pagination.pages }, (_, i) => i + 1)
+                .filter(p => p === 1 || p === pagination.pages || (p >= page - 1 && p <= page + 1))
+                .map((p, i, arr) => (
+                  <div key={p} className="flex items-center">
+                    {i > 0 && arr[i-1] !== p - 1 && <span className="text-slate-600 font-bold px-2">...</span>}
+                    <button
+                      onClick={() => { setPage(p); window.scrollTo(0, 0); }}
+                      className={`w-9 h-9 rounded-lg text-sm font-bold transition-all duration-200 ${
+                        page === p 
+                          ? "bg-blue-600 text-white shadow-lg shadow-blue-200 scale-105" 
+                          : "text-slate-500 hover:bg-white hover:text-blue-600 hover:shadow-sm"
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  </div>
+                ))}
+            </div>
+
+            {/* Jump to Page */}
+            <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-3 py-1.5 shadow-sm group focus-within:border-primary transition-colors">
+              <span className="text-[10px] font-black text-muted-foreground uppercase tracking-tighter">Go to</span>
+              <input 
+                type="number" 
+                min="1" 
+                max={pagination.pages}
+                placeholder={page}
+                className="w-10 bg-transparent text-sm font-bold text-foreground focus:outline-none text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const val = parseInt(e.target.value);
+                    if (val >= 1 && val <= pagination.pages) {
+                       setPage(val);
+                       window.scrollTo(0, 0);
+                       e.target.value = "";
+                       e.target.blur();
+                    }
+                  }
+                }}
+              />
+            </div>
+
+            {/* Navigation Buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { setPage(p => Math.max(1, p - 1)); window.scrollTo(0, 0); }}
+                disabled={page === 1}
+                className="h-10 px-4 rounded-xl bg-white border border-slate-200 text-slate-600 font-bold text-xs uppercase tracking-widest hover:bg-slate-50 hover:border-slate-300 disabled:opacity-30 disabled:pointer-events-none transition-all shadow-sm active:scale-95"
+              >
+                Prev
+              </button>
+              <button
+                onClick={() => { setPage(p => Math.min(pagination.pages, p + 1)); window.scrollTo(0, 0); }}
+                disabled={page === pagination.pages}
+                className="h-10 px-4 rounded-xl bg-white border border-slate-200 text-slate-600 font-bold text-xs uppercase tracking-widest hover:bg-slate-50 hover:border-slate-300 disabled:opacity-30 disabled:pointer-events-none transition-all shadow-sm active:scale-95"
+              >
+                Next
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -468,46 +533,47 @@ function ReturnModal({ onClose, onFound }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl w-full max-w-md p-6 border dark:border-white/10">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+      <div className="bg-card rounded-2xl shadow-xl w-full max-w-md p-6 border border-border">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-semibold text-gray-900">Return Bill</h2>
-          <button type="button" onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
+          <h2 className="text-lg font-black text-foreground uppercase tracking-tight">Return Bill</h2>
+          <button type="button" onClick={onClose} className="p-1 rounded-lg hover:bg-accent text-muted-foreground transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <form onSubmit={handleSearch} className="space-y-4">
           <div>
-            <label className="block text-sm font-semibold text-gray-800 mb-1.5">Invoice Code</label>
+            <label className="block text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">Invoice Code</label>
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/30 pointer-events-none" />
               <input
-                className="input text-center tracking-[0.3em] uppercase font-mono text-lg pl-10"
+                className="input text-center tracking-[0.3em] uppercase font-black text-lg pl-10"
                 type="text"
                 maxLength={8}
                 placeholder="EF314B"
                 value={code}
                 onChange={e => setCode(e.target.value.toUpperCase())}
                 autoFocus
+                style={{ caretColor: "var(--primary)" }}
               />
             </div>
-            <p className="text-xs text-gray-400 mt-1">Enter the 6-character invoice code from the bill</p>
+            <p className="text-[10px] text-muted-foreground mt-2 font-black uppercase tracking-tight">Enter the 6-character invoice code from the bill</p>
           </div>
 
           {/* Found Bill Preview */}
           {foundBill && (
-            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-2">
+            <div className="bg-accent/50 border border-border rounded-xl p-4 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-gray-500 uppercase">Bill Found</span>
-                <span className="font-mono text-xs font-semibold tracking-wider bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-md">
+                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Bill Found</span>
+                <span className="font-black text-xs tracking-wider bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-md uppercase">
                   {foundBill.billCode}
                 </span>
               </div>
-              <div className="grid grid-cols-2 gap-2 text-sm">
+              <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>
-                  <span className="text-gray-500">Bill #:</span>{" "}
-                  <span className="font-medium text-gray-900">{foundBill.billNumber}</span>
+                  <span className="text-muted-foreground font-bold uppercase text-[9px]">Bill #:</span>{" "}
+                  <span className="font-black text-foreground">{foundBill.billNumber}</span>
                 </div>
                 <div>
                   <span className="text-gray-500">Customer:</span>{" "}

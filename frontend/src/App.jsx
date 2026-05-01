@@ -14,10 +14,13 @@ import Inventory       from "./pages/Inventory";
 import InventoryDetail from "./pages/InventoryDetail";
 import Suppliers       from "./pages/Suppliers";
 import SupplierDetail  from "./pages/SupplierDetail";
+import Reports         from "./pages/Reports";
 import Analytics       from "./pages/Analytics";
-import Settings        from "./pages/Settings";
+import Labs            from "./pages/Labs";
+import Settings         from "./pages/Settings";
 import Login           from "./pages/Login";
 import Register        from "./pages/Register";
+import MobileScanner   from "./pages/MobileScanner";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -33,6 +36,7 @@ function Router() {
       <Route path="/register">
         <UnauthGuard><Register /></UnauthGuard>
       </Route>
+      <Route path="/m-scan" component={MobileScanner} />
 
       {/* Protected routes — wrapped in AuthGuard + Layout */}
       <Route>
@@ -49,7 +53,9 @@ function Router() {
               <Route path="/inventory"       component={Inventory} />
               <Route path="/suppliers/:id"   component={SupplierDetail} />
               <Route path="/suppliers"       component={Suppliers} />
+              <Route path="/reports"         component={Reports} />
               <Route path="/analytics"       component={Analytics} />
+              <Route path="/labs"            component={Labs} />
               <Route path="/settings"        component={Settings} />
               <Route>
                 <div className="text-center py-20">

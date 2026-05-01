@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useDispatch, useSelector } from "react-redux";
 import {
-  LayoutDashboard, Users, FileText, Package, Truck, BarChart3, Settings, Menu, X, LogOut, ChevronLeft, ChevronRight
+  LayoutDashboard, Users, FileText, Package, Truck, BarChart3, FlaskConical, Settings, Menu, X, LogOut, ChevronLeft, ChevronRight, ClipboardList
 } from "lucide-react";
 import { logoutUser } from "../redux/slices/authSlice";
 
@@ -12,7 +12,9 @@ const NAV_ITEMS = [
   { href: "/bills",      icon: FileText,        label: "Bills & Invoices" },
   { href: "/inventory",  icon: Package,         label: "Inventory" },
   { href: "/suppliers",  icon: Truck,           label: "Suppliers" },
+  { href: "/reports",    icon: ClipboardList,   label: "Shop Reports" },
   { href: "/analytics",  icon: BarChart3,       label: "Analytics" },
+  { href: "/labs",       icon: FlaskConical,    label: "Lab" },
   { href: "/settings",   icon: Settings,        label: "Settings" },
 ];
 
@@ -36,21 +38,20 @@ export function Layout({ children }) {
   };
 
   return (
-    <div className="min-h-screen flex bg-[#F8FAFC] font-sans">
-      {/* Sidebar */}
+    <div className="min-h-screen flex bg-background font-sans text-foreground">
       <aside className={`
         fixed md:sticky top-0 left-0 z-40 h-screen flex flex-col
-        bg-white border-r border-slate-200 transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]
+        bg-card border-r border-border transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]
         ${collapsed ? "md:w-[90px]" : "md:w-64"}
         ${mobileOpen ? "translate-x-0 w-64" : "-translate-x-full md:translate-x-0"}
       `}>
         {/* Logo Section */}
-        <div className={`h-20 flex items-center shrink-0 border-b border-slate-50 transition-all duration-500 ${collapsed ? "px-4" : "px-6"}`}>
+        <div className={`h-20 flex items-center shrink-0 border-b border-border/50 transition-all duration-500 ${collapsed ? "px-4" : "px-6"}`}>
           <div className="flex items-center gap-3 transition-all duration-500">
-            <div className={`rounded-lg bg-black flex items-center justify-center text-white font-black shadow-lg shadow-black/10 transition-all duration-500 ${collapsed ? "w-7 h-7 text-[10px]" : "w-8 h-8 text-xs"}`}>VB</div>
-            {!collapsed && <span className="font-bold text-xl text-slate-900 tracking-tight animate-pulse-fade">VyaparBook</span>}
+            <div className={`rounded-lg bg-foreground flex items-center justify-center text-background font-black shadow-lg shadow-foreground/10 transition-all duration-500 ${collapsed ? "w-7 h-7 text-[10px]" : "w-8 h-8 text-xs"}`}>VB</div>
+            {!collapsed && <span className="font-bold text-xl text-foreground tracking-tight animate-pulse-fade">VyaparBook</span>}
           </div>
-          <button onClick={() => setCollapsed(!collapsed)} className={`hidden md:flex ml-auto rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-900 transition-all duration-300 ${collapsed ? "p-1" : "p-2"}`}>
+          <button onClick={() => setCollapsed(!collapsed)} className={`hidden md:flex ml-auto rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-all duration-300 ${collapsed ? "p-1" : "p-2"}`}>
             {collapsed ? (
               <ChevronRight className="w-4 h-4 transition-all duration-500" />
             ) : (
@@ -64,7 +65,7 @@ export function Layout({ children }) {
           <div className="relative">
             {/* Sliding Indicator Pill - Precision Mouse Tracking */}
             <div 
-              className={`absolute h-12 bg-[#0061FF] rounded-2xl transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] shadow-xl shadow-blue-600/20 ${collapsed ? "left-2 right-2" : "left-0 right-0"}`}
+              className={`absolute h-12 bg-primary rounded-2xl transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] shadow-xl shadow-primary/20 ${collapsed ? "left-2 right-2" : "left-0 right-0"}`}
               style={{ 
                 opacity: displayIndex !== null ? 1 : 0,
                 transform: `translateY(${(displayIndex || 0) * 48}px)`,
@@ -83,7 +84,7 @@ export function Layout({ children }) {
                   <Link key={item.href} href={item.href}>
                     <a 
                       onMouseEnter={() => setHoverIndex(idx)}
-                      className={`flex items-center gap-3 h-12 rounded-2xl text-sm font-bold transition-all duration-500 ${collapsed ? "justify-center" : "px-4"} ${shouldHighlight ? "text-white" : "text-slate-500 hover:translate-x-1"}`}
+                      className={`flex items-center gap-3 h-12 rounded-2xl text-sm font-bold transition-all duration-500 ${collapsed ? "justify-center" : "px-4"} ${shouldHighlight ? "text-primary-foreground" : "text-muted-foreground hover:translate-x-1"}`}
                     >
                       <Icon className={`w-5 h-5 shrink-0 transition-transform duration-500 ${shouldHighlight ? "scale-110" : ""}`} />
                       {!collapsed && <span className="animate-pulse-fade truncate">{item.label}</span>}
@@ -96,14 +97,14 @@ export function Layout({ children }) {
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-slate-100">
+        <div className="p-4 border-t border-border/50">
            {user && !collapsed && (
-             <div className="px-4 py-3 bg-[#F1F5F9] rounded-2xl mb-4">
-               <p className="text-xs font-bold text-slate-900 truncate tracking-tight">{user.firstName} {user.lastName}</p>
-               <p className="text-[10px] text-slate-500 truncate font-semibold">{user.email}</p>
+             <div className="px-4 py-3 bg-accent rounded-2xl mb-4">
+               <p className="text-xs font-bold text-foreground truncate tracking-tight">{user.firstName} {user.lastName}</p>
+               <p className="text-[10px] text-muted-foreground truncate font-semibold">{user.email}</p>
              </div>
            )}
-           <button onClick={handleLogout} className={`flex items-center gap-3 py-2 text-slate-500 hover:text-red-600 w-full transition-colors font-bold text-sm ${collapsed ? "justify-center" : "px-4"}`}>
+           <button onClick={handleLogout} className={`flex items-center gap-3 py-2 text-muted-foreground hover:text-destructive w-full transition-colors font-bold text-sm ${collapsed ? "justify-center" : "px-4"}`}>
              <LogOut className="w-5 h-5" />
              {!collapsed && <span>Sign Out</span>}
            </button>
@@ -112,9 +113,9 @@ export function Layout({ children }) {
 
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 bg-white border-b border-slate-100 px-6 flex items-center md:hidden">
-          <button onClick={() => setMobileOpen(true)} className="text-slate-500"><Menu className="w-6 h-6" /></button>
-          <span className="ml-4 font-bold text-lg">VyaparBook</span>
+        <header className="h-16 bg-card border-b border-border px-6 flex items-center md:hidden">
+          <button onClick={() => setMobileOpen(true)} className="text-muted-foreground"><Menu className="w-6 h-6" /></button>
+          <span className="ml-4 font-bold text-lg text-foreground">VyaparBook</span>
         </header>
         <main className="flex-1 p-6 overflow-auto">
           {children}

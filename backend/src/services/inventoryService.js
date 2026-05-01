@@ -14,37 +14,57 @@ export const inventoryService = {
       where.OR = [
         { name: { contains: filters.search, mode: "insensitive" } },
         { sku: { contains: filters.search, mode: "insensitive" } },
+        { barcode: { contains: filters.search, mode: "insensitive" } },
       ];
     }
     if (filters.category) {
       where.category = filters.category;
     }
-    if (filters.status) {
-      where.status = filters.status;
+    const orConditions = [];
+
+    if (filters.lowStock === "true" || filters.lowStock === true) {
+      const lowStockItems = await prisma.$queryRaw`SELECT id FROM inventory_items WHERE "currentQuantity" <= "lowStockThreshold" AND "currentQuantity" > 0`;
+      const ids = lowStockItems.map(item => item.id);
+      orConditions.push({ id: { in: ids } });
     }
 
-    const [items, total, summaryAggs] = await Promise.all([
+    if (filters.expiringSoon === "true" || filters.expiringSoon === true) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const thirtyDays = new Date(today);
+      thirtyDays.setDate(thirtyDays.getDate() + 30);
+      orConditions.push({ expiryDate: { gte: today, lte: thirtyDays } });
+    }
+
+    if (orConditions.length > 0) {
+      where.OR = orConditions;
+    }
+
+    const orderBy = { createdAt: "desc" };
+
+    const [items, total, filteredItems, globalItems] = await Promise.all([
       prisma.inventoryItem.findMany({
         where,
         skip,
         take: limit,
         include: { supplier: true },
-        orderBy: { createdAt: "desc" },
+        orderBy,
       }),
       prisma.inventoryItem.count({ where }),
+      // Items matching current filters (for potential per-filter summary)
       prisma.inventoryItem.findMany({
         where,
-        select: {
-          currentQuantity: true,
-          sellingPrice: true,
-          lowStockThreshold: true,
-          expiryDate: true,
-        }
+        select: { currentQuantity: true, sellingPrice: true, lowStockThreshold: true, expiryDate: true }
+      }),
+      // Global items for stable summary cards
+      prisma.inventoryItem.findMany({
+        where: {},
+        select: { currentQuantity: true, sellingPrice: true, lowStockThreshold: true, expiryDate: true }
       })
     ]);
 
-    // Compute summary stats from ALL matching items
-    let totalStockValue = 0n;
+    // Compute summary stats from GLOBAL items so cards stay stable
+    let totalStockValue = 0;
     let lowStockCount = 0;
     let expiringSoonCount = 0;
 
@@ -53,8 +73,8 @@ export const inventoryService = {
     const thirtyDays = new Date(today);
     thirtyDays.setDate(thirtyDays.getDate() + 30);
 
-    for (const item of summaryAggs) {
-      totalStockValue += BigInt(item.currentQuantity) * item.sellingPrice;
+    for (const item of globalItems) {
+      totalStockValue += (Number(item.currentQuantity) || 0) * (Number(item.sellingPrice) || 0);
       if (item.currentQuantity <= item.lowStockThreshold && item.currentQuantity > 0) {
         lowStockCount++;
       }
@@ -69,8 +89,8 @@ export const inventoryService = {
     return {
       data: items,
       summary: {
-        totalItems: total,
-        totalStockValue: Number(totalStockValue),
+        totalItems: globalItems.length,
+        totalStockValue,
         lowStockCount,
         expiringSoonCount,
       },
@@ -94,6 +114,7 @@ export const inventoryService = {
     const createData = {
       name: data.name,
       sku: data.sku || null,
+      barcode: data.barcode || null,
       category: data.category || null,
       location: data.location || null,
       unit: data.unit,
@@ -102,7 +123,8 @@ export const inventoryService = {
       currentQuantity: parseFloat(data.currentQuantity) || 0,
       totalQuantity: parseFloat(data.totalQuantity) || 0,
       lowStockThreshold: parseFloat(data.lowStockThreshold) || 0,
-      taxRate: parseInt(data.taxRate) || 0,
+      taxRate: parseFloat(data.taxRate) || 0,
+      taxType: data.taxType || null,
       hsnCode: data.hsnCode || null,
       expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
       unitValue: parseFloat(data.unitValue) || 1.0,
@@ -127,6 +149,7 @@ export const inventoryService = {
       data: {
         name: data.name,
         sku: data.sku,
+        barcode: data.barcode,
         category: data.category,
         location: data.location,
         unit: data.unit,
@@ -135,7 +158,8 @@ export const inventoryService = {
         currentQuantity: parseFloat(data.currentQuantity) || 0,
         totalQuantity: parseFloat(data.totalQuantity) || 0,
         lowStockThreshold: parseFloat(data.lowStockThreshold) || 0,
-        taxRate: parseInt(data.taxRate) || 0,
+        taxRate: parseFloat(data.taxRate) || 0,
+        taxType: data.taxType || null,
         hsnCode: data.hsnCode || null,
         expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
         unitValue: parseFloat(data.unitValue) || 1.0,
